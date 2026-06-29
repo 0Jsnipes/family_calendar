@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Family Hub
 
-## Getting Started
+Family Hub is a standalone family calendar dashboard built for a wall-mounted tablet, Raspberry Pi touchscreen, or always-on browser display.
 
-First, run the development server:
+## What it does
+
+- Shows today, week, and month calendar views
+- Surfaces chores, meal planning, weather, and family status
+- Runs fully in mock mode when env vars are empty
+- Is ready for later Google Calendar and weather integration
+- Supports kiosk-style full-screen display and standby screensaver behavior
+
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env.local` and leave values blank until you connect real services.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `NEXT_PUBLIC_*` values are safe for the client
+- Secret Google and weather keys stay server-side only
+- Mock data is used automatically when credentials are missing
 
-## Learn More
+## Mock mode
 
-To learn more about Next.js, take a look at the following resources:
+The app ships with dynamic mock calendar events, chores, meals, family members, and weather. It generates dates relative to the current day so the UI stays realistic without hardcoded stale dates.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Connecting Google Calendar later
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The current server helpers in `lib/calendar.ts` are structured for future Google Calendar integration.
 
-## Deploy on Vercel
+Planned connection points:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Read `GOOGLE_CALENDAR_IDS`
+- Add OAuth refresh-token or server credential flow
+- Fetch Google events on the server
+- Map Google events into the shared `CalendarEvent` type
+- Support incremental sync with `nextSyncToken`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Kiosk mode
+
+Useful query params:
+
+- `?view=today`
+- `?view=week`
+- `?view=month`
+- `?kiosk=true`
+
+The dashboard includes an idle screensaver mode and a dimmed night mode for display use.
+
+## Recommended display settings
+
+- 1280x800 for compact tablets
+- 1920x1080 for wall displays
+- Landscape orientation
+- Auto-hide browser UI if possible
+- Keep brightness moderate to reduce burn-in
+
+## Production notes
+
+- Add real calendar and weather providers before launch
+- Keep secrets server-side only
+- Add app icons before publishing as a PWA
+- Use the included manifest for standalone install behavior

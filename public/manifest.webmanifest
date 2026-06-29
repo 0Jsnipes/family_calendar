@@ -1,0 +1,17 @@
+{
+  "name": "Family Hub",
+  "short_name": "FamilyHub",
+  "description": "Home Command Center for a family wall display.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape-primary",
+  "background_color": "#f3efe8",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}
