@@ -4,9 +4,10 @@ import {
   GoogleAuthProvider,
   setPersistence,
   browserLocalPersistence,
+  type Auth,
 } from "firebase/auth";
 import { getAnalytics, isSupported, type Analytics } from "firebase/analytics";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,25 +19,63 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
+export function isFirebaseClientConfigured() {
+  return Boolean(
+    firebaseConfig.apiKey &&
+      firebaseConfig.authDomain &&
+      firebaseConfig.projectId &&
+      firebaseConfig.appId,
+  );
+}
+
 function ensureFirebaseApp(): FirebaseApp {
+  if (!isFirebaseClientConfigured()) {
+    throw new Error("firebase-client-not-configured");
+  }
+
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
 
-export const firebaseApp = ensureFirebaseApp();
-export const firebaseAuth = getAuth(firebaseApp);
-export const firebaseDb = getFirestore(firebaseApp);
+let firebaseAppInstance: FirebaseApp | null = null;
+let firebaseAuthInstance: Auth | null = null;
+let firebaseDbInstance: Firestore | null = null;
+
+export function getFirebaseApp() {
+  if (!firebaseAppInstance) {
+    firebaseAppInstance = ensureFirebaseApp();
+  }
+
+  return firebaseAppInstance;
+}
+
+export function getFirebaseAuth() {
+  if (!firebaseAuthInstance) {
+    firebaseAuthInstance = getAuth(getFirebaseApp());
+  }
+
+  return firebaseAuthInstance;
+}
+
+export function getFirebaseDb() {
+  if (!firebaseDbInstance) {
+    firebaseDbInstance = getFirestore(getFirebaseApp());
+  }
+
+  return firebaseDbInstance;
+}
+
 export const googleProvider = new GoogleAuthProvider();
 export let firebaseAnalytics: Analytics | null = null;
 
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
-if (typeof window !== "undefined") {
-  void setPersistence(firebaseAuth, browserLocalPersistence);
+if (typeof window !== "undefined" && isFirebaseClientConfigured()) {
+  void setPersistence(getFirebaseAuth(), browserLocalPersistence);
 
   if (firebaseConfig.measurementId) {
     void isSupported().then((supported) => {
       if (supported) {
-        firebaseAnalytics = getAnalytics(firebaseApp);
+        firebaseAnalytics = getAnalytics(getFirebaseApp());
       }
     });
   }

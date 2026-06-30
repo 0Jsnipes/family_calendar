@@ -13,7 +13,7 @@ import {
   setDoc,
   writeBatch,
 } from "firebase/firestore";
-import { firebaseDb } from "@/lib/firebase/client";
+import { getFirebaseDb, isFirebaseClientConfigured } from "@/lib/firebase/client";
 import type { Chore } from "@/types";
 
 export type RoutineTask = Chore & {
@@ -48,34 +48,54 @@ function normalizeTask(
 
 export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
   const [tasks, setTasks] = useState<RoutineTask[]>(defaultTasks);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(isFirebaseClientConfigured());
+  const [error, setError] = useState<string | null>(
+    isFirebaseClientConfigured() ? null : "Firebase client env vars are missing.",
+  );
 
-  const dayRef = useMemo(() => doc(firebaseDb, "routineDays", dateKey), [dateKey]);
+  const dayRef = useMemo(
+    () =>
+      isFirebaseClientConfigured()
+        ? doc(getFirebaseDb(), "routineDays", dateKey)
+        : null,
+    [dateKey],
+  );
   const tasksRef = useMemo(
-    () => collection(firebaseDb, "routineDays", dateKey, "tasks"),
+    () =>
+      isFirebaseClientConfigured()
+        ? collection(getFirebaseDb(), "routineDays", dateKey, "tasks")
+        : null,
     [dateKey],
   );
 
   useEffect(() => {
+    if (!dayRef || !tasksRef) {
+      setTasks(defaultTasks);
+      setLoading(false);
+      return;
+    }
+
+    const currentDayRef = dayRef;
+    const currentTasksRef = tasksRef;
+
     let ignore = false;
     setLoading(true);
 
     async function ensureDayInitialized() {
-      const daySnapshot = await getDoc(dayRef);
+      const daySnapshot = await getDoc(currentDayRef);
       if (daySnapshot.exists()) return;
 
-      await runTransaction(firebaseDb, async (transaction) => {
-        const currentDay = await transaction.get(dayRef);
+      await runTransaction(getFirebaseDb(), async (transaction) => {
+        const currentDay = await transaction.get(currentDayRef);
         if (currentDay.exists()) return;
 
-        transaction.set(dayRef, {
+        transaction.set(currentDayRef, {
           initializedAt: serverTimestamp(),
           dateKey,
         });
 
         for (const task of defaultTasks) {
-          const taskRef = doc(tasksRef, task.id);
+          const taskRef = doc(currentTasksRef, task.id);
           transaction.set(taskRef, {
             ...task,
             dueDate: task.dueDate ?? dateKey,
@@ -94,7 +114,7 @@ export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
     });
 
     const unsubscribe = onSnapshot(
-      query(tasksRef, orderBy("createdAt", "asc")),
+      query(currentTasksRef, orderBy("createdAt", "asc")),
       (snapshot) => {
         if (ignore) return;
         const nextTasks = snapshot.docs.map((taskDoc) =>
@@ -123,6 +143,7 @@ export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
   }, [dateKey, dayRef, defaultTasks, tasksRef]);
 
   async function addTask(title: string) {
+    if (!tasksRef) throw new Error("Firebase client env vars are missing.");
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
 
@@ -138,6 +159,7 @@ export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
   }
 
   async function toggleTask(taskId: string) {
+    if (!tasksRef) throw new Error("Firebase client env vars are missing.");
     const existingTask = tasks.find((task) => task.id === taskId);
     if (!existingTask) return;
 
@@ -149,13 +171,17 @@ export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
   }
 
   async function deleteTask(taskId: string) {
-    const batch = writeBatch(firebaseDb);
+    if (!tasksRef) throw new Error("Firebase client env vars are missing.");
+    const batch = writeBatch(getFirebaseDb());
     batch.delete(doc(tasksRef, taskId));
     await batch.commit();
   }
 
   async function resetTasks() {
-    const batch = writeBatch(firebaseDb);
+    if (!dayRef || !tasksRef) {
+      throw new Error("Firebase client env vars are missing.");
+    }
+    const batch = writeBatch(getFirebaseDb());
 
     for (const task of tasks) {
       batch.delete(doc(tasksRef, task.id));

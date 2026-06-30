@@ -3,17 +3,27 @@
 import { useState } from "react";
 import { LogIn, ShieldCheck } from "lucide-react";
 import { signInWithPopup, signOut } from "firebase/auth";
-import { firebaseAuth, googleProvider } from "@/lib/firebase/client";
+import {
+  getFirebaseAuth,
+  googleProvider,
+  isFirebaseClientConfigured,
+} from "@/lib/firebase/client";
 
 export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   async function handleSignIn() {
+    if (!isFirebaseClientConfigured()) {
+      setError("Firebase client env vars are missing.");
+      return;
+    }
+
     setPending(true);
     setError(null);
 
     try {
+      const firebaseAuth = getFirebaseAuth();
       const credential = await signInWithPopup(firebaseAuth, googleProvider);
       const idToken = await credential.user.getIdToken();
 
@@ -32,7 +42,9 @@ export default function SignInScreen() {
 
       window.location.reload();
     } catch (error) {
-      await signOut(firebaseAuth).catch(() => undefined);
+      if (isFirebaseClientConfigured()) {
+        await signOut(getFirebaseAuth()).catch(() => undefined);
+      }
       setError(error instanceof Error ? error.message : "Unable to sign in.");
     } finally {
       setPending(false);
@@ -58,10 +70,14 @@ export default function SignInScreen() {
           type="button"
           className="sign-in-button"
           onClick={handleSignIn}
-          disabled={pending}
+          disabled={pending || !isFirebaseClientConfigured()}
         >
           <LogIn size={18} />
-          {pending ? "Signing in..." : "Continue with Google"}
+          {!isFirebaseClientConfigured()
+            ? "Firebase not configured"
+            : pending
+              ? "Signing in..."
+              : "Continue with Google"}
         </button>
         {error ? <p className="sign-in-error">{error}</p> : null}
       </section>

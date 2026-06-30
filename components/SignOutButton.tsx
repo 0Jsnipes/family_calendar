@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { LogOut } from "lucide-react";
 import { signOut } from "firebase/auth";
-import { firebaseAuth } from "@/lib/firebase/client";
+import { getFirebaseAuth, isFirebaseClientConfigured } from "@/lib/firebase/client";
 
 type Props = {
   className?: string;
@@ -17,7 +17,9 @@ export default function SignOutButton({ className }: Props) {
 
     try {
       await fetch("/api/session", { method: "DELETE" });
-      await signOut(firebaseAuth).catch(() => undefined);
+      if (isFirebaseClientConfigured()) {
+        await signOut(getFirebaseAuth()).catch(() => undefined);
+      }
       window.location.reload();
     } finally {
       setPending(false);
