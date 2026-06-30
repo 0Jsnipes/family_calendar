@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasEmail() {
+      return isSignedIn() && request.auth.token.email != null;
+    }
+
+    match /routineDays/{dateKey} {
+      allow read, write: if hasEmail();
+
+      match /tasks/{taskId} {
+        allow read, write: if hasEmail();
+      }
+    }
+
+    match /households/{householdId} {
+      allow read, write: if hasEmail();
+
+      match /accounts/{accountId} {
+        allow read, write: if hasEmail();
+      }
+    }
+  }
+}

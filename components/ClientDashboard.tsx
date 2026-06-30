@@ -31,6 +31,11 @@ import {
   X,
 } from "lucide-react";
 import { appConfig } from "@/lib/config";
+import { useHouseholdAccounts } from "@/hooks/useHouseholdAccounts";
+import {
+  useRoutineTasks,
+  type RoutineTask,
+} from "@/hooks/useRoutineTasks";
 import {
   addDays,
   formatDateLabel,
@@ -40,13 +45,16 @@ import {
 } from "@/lib/date";
 import type {
   AppData,
+  AuthenticatedUser,
   CalendarEvent,
   Chore,
   DisplayView,
   FamilyMember,
+  HouseholdAccount,
   Weather,
 } from "@/types";
 import Screensaver from "./Screensaver";
+import SignOutButton from "./SignOutButton";
 
 const MAX_ROUTINE_TASKS = 4;
 const MAX_DRAWER_TASKS = 12;
@@ -69,13 +77,10 @@ type Props = {
   data: AppData;
   initialView: DisplayView;
   kioskMode: boolean;
+  currentUser: AuthenticatedUser;
 };
 
 type CalendarMode = "week" | "month";
-
-type RoutineTask = Chore & {
-  createdAt: string;
-};
 
 type DailyWeather = {
   label: string;
@@ -222,7 +227,12 @@ function weekdayLabel(date: Date) {
   }).format(date);
 }
 
-export default function ClientDashboard({ data, initialView, kioskMode }: Props) {
+export default function ClientDashboard({
+  data,
+  initialView,
+  kioskMode,
+  currentUser,
+}: Props) {
   const now = useClock(data.lastUpdated);
   const todayKey = toDateKey(now, appConfig.timezone);
   const defaultTasks = useMemo(() => toRoutineTasks(data.chores), [data.chores]);
@@ -243,9 +253,7 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
     initialView === "month" ? "month" : "week",
   );
   const [selectedDate, setSelectedDate] = useState(now);
-  const [tasks, setTasks] = useState<RoutineTask[]>(defaultTasks);
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isRoutineOpen, setIsRoutineOpen] = useState(false);
   const [isAsleep, setIsAsleep] = useState(false);
   const [lastInteraction, setLastInteraction] = useState(() => Date.now());
@@ -258,6 +266,11 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
   const [customMembers, setCustomMembers] = useState<FamilyMember[]>([]);
   const [hasLoadedMembers, setHasLoadedMembers] = useState(false);
   const [memberName, setMemberName] = useState("");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accountCalendarId, setAccountCalendarId] = useState("");
+  const [accountDisplayName, setAccountDisplayName] = useState("");
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountPending, setAccountPending] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
 
   const allMembers = useMemo(
@@ -265,34 +278,15 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
     [customMembers, data.familyMembers],
   );
   const familyOwner = ownerFor(allMembers, "family");
-  const taskStorageKey = `family-hub-routine-${todayKey}`;
-
-  useEffect(() => {
-    const loadTasks = window.setTimeout(() => {
-      const savedTasks = window.localStorage.getItem(taskStorageKey);
-
-      if (!savedTasks) {
-        setTasks(defaultTasks);
-        setHasLoadedTasks(true);
-        return;
-      }
-
-      try {
-        setTasks(JSON.parse(savedTasks) as RoutineTask[]);
-      } catch {
-        setTasks(defaultTasks);
-      }
-
-      setHasLoadedTasks(true);
-    }, 0);
-
-    return () => window.clearTimeout(loadTasks);
-  }, [defaultTasks, taskStorageKey]);
-
-  useEffect(() => {
-    if (!hasLoadedTasks) return;
-    window.localStorage.setItem(taskStorageKey, JSON.stringify(tasks));
-  }, [hasLoadedTasks, taskStorageKey, tasks]);
+  const {
+    accounts,
+    loading: accountsLoading,
+    error: accountsError,
+    addAccount,
+    removeAccount,
+  } = useHouseholdAccounts();
+  const { tasks, loading: tasksLoading, error: tasksError, addTask, toggleTask, deleteTask, resetTasks } =
+    useRoutineTasks(todayKey, defaultTasks);
 
   useEffect(() => {
     const loadSettings = window.setTimeout(() => {
@@ -484,41 +478,13 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
   const drawerTasks = tasks.slice(0, MAX_DRAWER_TASKS);
   const hiddenDrawerTaskCount = Math.max(tasks.length - drawerTasks.length, 0);
 
-  function handleAddTask(event: FormEvent<HTMLFormElement>) {
+  async function handleAddTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = newTaskTitle.trim();
     if (!title) return;
 
-    setTasks((currentTasks) => [
-      ...currentTasks,
-      {
-        id: createId("task"),
-        title,
-        ownerId: "family",
-        done: false,
-        dueDate: todayKey,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    await addTask(title);
     setNewTaskTitle("");
-  }
-
-  function toggleTask(taskId: string) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId ? { ...task, done: !task.done } : task,
-      ),
-    );
-  }
-
-  function deleteTask(taskId: string) {
-    setTasks((currentTasks) =>
-      currentTasks.filter((task) => task.id !== taskId),
-    );
-  }
-
-  function resetToday() {
-    setTasks(defaultTasks.map((task) => ({ ...task, done: false })));
   }
 
   function moveCalendar(direction: number) {
@@ -574,6 +540,51 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
       },
     ]);
     setMemberName("");
+  }
+
+  async function handleAddHouseholdAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = accountEmail.trim().toLowerCase();
+    if (!email) return;
+
+    setAccountPending(true);
+    setAccountError(null);
+
+    try {
+      await addAccount({
+        email,
+        name: accountDisplayName.trim() || undefined,
+        calendarId: accountCalendarId.trim() || undefined,
+      });
+      setAccountEmail("");
+      setAccountDisplayName("");
+      setAccountCalendarId("");
+    } catch (caughtError) {
+      setAccountError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to add family account.",
+      );
+    } finally {
+      setAccountPending(false);
+    }
+  }
+
+  async function handleRemoveHouseholdAccount(account: HouseholdAccount) {
+    setAccountPending(true);
+    setAccountError(null);
+
+    try {
+      await removeAccount(account.email);
+    } catch (caughtError) {
+      setAccountError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to remove family account.",
+      );
+    } finally {
+      setAccountPending(false);
+    }
   }
 
   if (isAsleep) {
@@ -685,7 +696,7 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
                       key={task.id}
                       type="button"
                       className={`routine-task ${task.done ? "complete" : ""}`}
-                      onClick={() => toggleTask(task.id)}
+                      onClick={() => void toggleTask(task.id)}
                     >
                       <span className="routine-check">
                         {task.done ? <Check size={15} /> : <Circle size={15} />}
@@ -1087,30 +1098,88 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
                 <div className="account-status">
                   <span
                     className={`status-light ${
-                      settings.accountConnected ? "connected" : ""
+                      currentUser.email ? "connected" : ""
                     }`}
                   />
                   <div>
-                    <strong>
-                      {settings.accountConnected ? "Home Admin" : "Local display"}
-                    </strong>
+                    <strong>{currentUser.name ?? currentUser.email}</strong>
                     <small>
-                      {settings.accountConnected
-                        ? "Account connected"
-                        : "Not signed in"}
+                      {currentUser.email}
                     </small>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSettings((current) => ({
-                        ...current,
-                        accountConnected: !current.accountConnected,
-                      }))
-                    }
+                  <SignOutButton />
+                </div>
+                <div className="household-access-panel">
+                  <div className="household-access-copy">
+                    <strong>Approved sign-ins and linked calendars</strong>
+                    <small>
+                      Added emails can sign in with Google. Calendar ID defaults to
+                      the same email and must be shared with the hub Google account.
+                    </small>
+                  </div>
+
+                  <div className="household-account-list">
+                    {accounts.map((account) => (
+                      <div key={account.email} className="household-account-row">
+                        <div>
+                          <strong>{account.name ?? account.email}</strong>
+                          <small>{account.email}</small>
+                          <small>
+                            Calendar: {account.calendarId?.trim() || account.email}
+                          </small>
+                        </div>
+                        <button
+                          type="button"
+                          className="account-remove-button"
+                          onClick={() => void handleRemoveHouseholdAccount(account)}
+                          disabled={accountPending}
+                          aria-label={`Remove ${account.email}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                    {!accounts.length && !accountsLoading ? (
+                      <p className="quiet-note">
+                        No extra family accounts yet.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <form
+                    className="household-account-form"
+                    onSubmit={handleAddHouseholdAccount}
                   >
-                    {settings.accountConnected ? "Sign out" : "Sign in"}
-                  </button>
+                    <input
+                      value={accountDisplayName}
+                      onChange={(event) => setAccountDisplayName(event.target.value)}
+                      placeholder="Name"
+                      aria-label="Family account name"
+                      maxLength={40}
+                    />
+                    <input
+                      value={accountEmail}
+                      onChange={(event) => setAccountEmail(event.target.value)}
+                      placeholder="Email"
+                      aria-label="Family account email"
+                      type="email"
+                      maxLength={120}
+                    />
+                    <input
+                      value={accountCalendarId}
+                      onChange={(event) => setAccountCalendarId(event.target.value)}
+                      placeholder="Calendar ID (optional)"
+                      aria-label="Calendar ID"
+                      maxLength={160}
+                    />
+                    <button type="submit" disabled={accountPending}>
+                      <UserPlus size={17} /> Add account
+                    </button>
+                  </form>
+
+                  {accountError || accountsError ? (
+                    <p className="quiet-note">{accountError ?? accountsError}</p>
+                  ) : null}
                 </div>
               </section>
 
@@ -1337,11 +1406,14 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
                 onChange={(event) => setNewTaskTitle(event.target.value)}
                 placeholder="Add a family routine task"
                 aria-label="New routine task"
+                disabled={tasksLoading}
               />
-              <button type="submit">
+              <button type="submit" disabled={tasksLoading}>
                 <Plus size={18} /> Add
               </button>
             </form>
+
+            {tasksError ? <p className="quiet-note">{tasksError}</p> : null}
 
             <div className="drawer-task-list" aria-label="Daily routine tasks">
               {drawerTasks.map((task) => {
@@ -1355,7 +1427,7 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
                     <button
                       type="button"
                       className="check-button"
-                      onClick={() => toggleTask(task.id)}
+                      onClick={() => void toggleTask(task.id)}
                       aria-label={
                         task.done
                           ? `Mark ${task.title} incomplete`
@@ -1371,7 +1443,7 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
                     <button
                       type="button"
                       className="delete-button"
-                      onClick={() => deleteTask(task.id)}
+                      onClick={() => void deleteTask(task.id)}
                       aria-label={`Delete ${task.title}`}
                     >
                       <Trash2 size={17} />
@@ -1383,7 +1455,7 @@ export default function ClientDashboard({ data, initialView, kioskMode }: Props)
 
             <div className="drawer-footer">
               <span style={{ color: familyOwner.color }}>Family routine</span>
-              <button type="button" onClick={resetToday}>
+              <button type="button" onClick={() => void resetTasks()}>
                 Reset today
               </button>
             </div>

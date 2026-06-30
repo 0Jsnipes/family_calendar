@@ -69,3 +69,18 @@ export type AppData = {
     weatherConfigured: boolean;
   };
 };
+
+export type AuthenticatedUser = {
+  uid: string;
+  email: string;
+  name?: string;
+  picture?: string;
+};
+
+export type HouseholdAccount = {
+  email: string;
+  name?: string;
+  calendarId?: string;
+  status: "active";
+  createdBy?: string;
+};

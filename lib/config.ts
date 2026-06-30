@@ -15,6 +15,10 @@ export const appConfig = {
 };
 
 export const serverConfig = {
+  allowedEmails: (process.env.ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN ?? "",
@@ -22,7 +26,9 @@ export const serverConfig = {
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean),
-  googleCalendarApiKey: process.env.GOOGLE_CALENDAR_API_KEY ?? "",
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID ?? "",
+  firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL ?? "",
+  firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY ?? "",
   weatherApiKey: process.env.WEATHER_API_KEY ?? "",
 };
 

@@ -1,6 +1,9 @@
+import { cookies } from "next/headers";
 import ClientDashboard from "@/components/ClientDashboard";
+import SignInScreen from "@/components/SignInScreen";
 import { appConfig } from "@/lib/config";
 import { getCalendarEvents } from "@/lib/calendar";
+import { sessionCookieName, verifySessionCookie } from "@/lib/firebase/admin";
 import { getChores, getFamilyMembers, getMealPlan } from "@/lib/mock-data";
 import { getWeather } from "@/lib/weather";
 
@@ -37,6 +40,14 @@ export default async function Page({
   }>;
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get(sessionCookieName)?.value;
+  const currentUser = await verifySessionCookie(sessionCookie);
+
+  if (!currentUser) {
+    return <SignInScreen />;
+  }
+
   const [calendar, weather] = await Promise.all([
     getCalendarEvents(),
     getWeather(),
@@ -59,6 +70,7 @@ export default async function Page({
       data={data}
       initialView={getViewFromSearchParams(resolvedSearchParams)}
       kioskMode={getKioskFromSearchParams(resolvedSearchParams)}
+      currentUser={currentUser}
     />
   );
 }
