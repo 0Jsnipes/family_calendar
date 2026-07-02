@@ -31,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { appConfig } from "@/lib/config";
-import { useHouseholdAccounts } from "@/hooks/useHouseholdAccounts";
+import { useHubDirectory } from "@/hooks/useHubDirectory";
 import {
   useRoutineTasks,
   type RoutineTask,
@@ -50,10 +50,11 @@ import type {
   Chore,
   DisplayView,
   FamilyMember,
-  HouseholdAccount,
+  HubMemberRecord,
   Weather,
 } from "@/types";
 import Screensaver from "./Screensaver";
+import GoogleCalendarSync from "./GoogleCalendarSync";
 import SignOutButton from "./SignOutButton";
 
 const MAX_ROUTINE_TASKS = 4;
@@ -61,7 +62,6 @@ const MAX_DRAWER_TASKS = 12;
 const MAX_VISIBLE_EVENTS = 8;
 const SETTINGS_STORAGE_KEY = "family-hub-settings";
 const NOTES_STORAGE_KEY = "family-hub-notes";
-const MEMBERS_STORAGE_KEY = "family-hub-custom-members";
 
 const ACCENT_OPTIONS = [
   { name: "Ocean", value: "#2563eb", soft: "#dbeafe" },
@@ -78,6 +78,7 @@ type Props = {
   initialView: DisplayView;
   kioskMode: boolean;
   currentUser: AuthenticatedUser;
+  currentUserRole: "owner" | "admin" | "member" | "child" | "local";
 };
 
 type CalendarMode = "week" | "month";
@@ -232,6 +233,7 @@ export default function ClientDashboard({
   initialView,
   kioskMode,
   currentUser,
+  currentUserRole,
 }: Props) {
   const now = useClock(data.lastUpdated);
   const todayKey = toDateKey(now, appConfig.timezone);
@@ -263,28 +265,49 @@ export default function ClientDashboard({
   const [hasLoadedNotes, setHasLoadedNotes] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteColor, setNoteColor] = useState(NOTE_COLORS[0]);
-  const [customMembers, setCustomMembers] = useState<FamilyMember[]>([]);
-  const [hasLoadedMembers, setHasLoadedMembers] = useState(false);
   const [memberName, setMemberName] = useState("");
+  const [memberRole, setMemberRole] = useState("local");
+  const [memberColor, setMemberColor] = useState<string>(ACCENT_OPTIONS[1].value);
   const [accountEmail, setAccountEmail] = useState("");
-  const [accountCalendarId, setAccountCalendarId] = useState("");
-  const [accountDisplayName, setAccountDisplayName] = useState("");
+  const [accountRole, setAccountRole] = useState<"admin" | "member">("member");
   const [accountError, setAccountError] = useState<string | null>(null);
   const [accountPending, setAccountPending] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
 
-  const allMembers = useMemo(
-    () => [...data.familyMembers, ...customMembers],
-    [customMembers, data.familyMembers],
-  );
-  const familyOwner = ownerFor(allMembers, "family");
   const {
-    accounts,
-    loading: accountsLoading,
-    error: accountsError,
-    addAccount,
-    removeAccount,
-  } = useHouseholdAccounts();
+    members: hubMembers,
+    invites,
+    loading: directoryLoading,
+    error: directoryError,
+    addLocalMember,
+    removeMember,
+    inviteMember,
+  } = useHubDirectory();
+  const allMembers = useMemo(() => {
+    if (!hubMembers.length) return data.familyMembers;
+
+    return hubMembers.map((member) => ({
+      id: member.id,
+      name: member.displayName,
+      role: member.role,
+      initials: member.displayName
+        .split(/\s+/)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase(),
+      color: member.color,
+      memberType: member.type,
+      email: member.email,
+      status: member.status,
+      calendarConnected: member.calendarConnected,
+      showCalendarOnHub: member.showCalendarOnHub,
+      uid: member.uid,
+    }));
+  }, [data.familyMembers, hubMembers]);
+  const familyOwner = ownerFor(allMembers, "family");
+  const canManageMembers =
+    currentUserRole === "owner" || currentUserRole === "admin";
   const { tasks, loading: tasksLoading, error: tasksError, addTask, toggleTask, deleteTask, resetTasks } =
     useRoutineTasks(todayKey, defaultTasks);
 
@@ -343,29 +366,6 @@ export default function ClientDashboard({
     if (!hasLoadedNotes) return;
     window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
   }, [hasLoadedNotes, notes]);
-
-  useEffect(() => {
-    const loadMembers = window.setTimeout(() => {
-      const savedMembers = window.localStorage.getItem(MEMBERS_STORAGE_KEY);
-
-      if (savedMembers) {
-        try {
-          setCustomMembers(JSON.parse(savedMembers) as FamilyMember[]);
-        } catch {
-          setCustomMembers([]);
-        }
-      }
-
-      setHasLoadedMembers(true);
-    }, 0);
-
-    return () => window.clearTimeout(loadMembers);
-  }, []);
-
-  useEffect(() => {
-    if (!hasLoadedMembers) return;
-    window.localStorage.setItem(MEMBERS_STORAGE_KEY, JSON.stringify(customMembers));
-  }, [customMembers, hasLoadedMembers]);
 
   useEffect(() => {
     if (settings.idleMinutes === 0) {
@@ -520,30 +520,34 @@ export default function ClientDashboard({
 
   function handleAddMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageMembers) return;
     const name = memberName.trim();
     if (!name) return;
-
-    const color = ACCENT_OPTIONS[allMembers.length % ACCENT_OPTIONS.length].value;
-    setCustomMembers((currentMembers) => [
-      ...currentMembers,
-      {
-        id: createId("member"),
-        name,
-        role: "Family member",
-        initials: name
-          .split(/\s+/)
-          .map((part) => part[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase(),
-        color,
-      },
-    ]);
-    setMemberName("");
+    setAccountPending(true);
+    setAccountError(null);
+    void addLocalMember({
+      name,
+      role: memberRole,
+      color: memberColor,
+    })
+      .then(() => {
+        setMemberName("");
+      })
+      .catch((caughtError) => {
+        setAccountError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to add local member.",
+        );
+      })
+      .finally(() => {
+        setAccountPending(false);
+      });
   }
 
   async function handleAddHouseholdAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageMembers) return;
     const email = accountEmail.trim().toLowerCase();
     if (!email) return;
 
@@ -551,14 +555,11 @@ export default function ClientDashboard({
     setAccountError(null);
 
     try {
-      await addAccount({
+      await inviteMember({
         email,
-        name: accountDisplayName.trim() || undefined,
-        calendarId: accountCalendarId.trim() || undefined,
+        role: accountRole,
       });
       setAccountEmail("");
-      setAccountDisplayName("");
-      setAccountCalendarId("");
     } catch (caughtError) {
       setAccountError(
         caughtError instanceof Error
@@ -570,12 +571,13 @@ export default function ClientDashboard({
     }
   }
 
-  async function handleRemoveHouseholdAccount(account: HouseholdAccount) {
+  async function handleRemoveHouseholdAccount(account: HubMemberRecord) {
+    if (!canManageMembers) return;
     setAccountPending(true);
     setAccountError(null);
 
     try {
-      await removeAccount(account.email);
+      await removeMember(account.id);
     } catch (caughtError) {
       setAccountError(
         caughtError instanceof Error
@@ -637,7 +639,7 @@ export default function ClientDashboard({
             ) : (
               <WifiOff size={17} />
             )}
-            {data.providers.calendarConfigured ? "Synced" : "Demo data"}
+            {data.providers.calendarConfigured ? "Synced" : "Not connected"}
           </span>
         </div>
       </header>
@@ -911,6 +913,10 @@ export default function ClientDashboard({
               </div>
             </div>
 
+            <GoogleCalendarSync
+              currentUserName={currentUser.name ?? currentUser.email}
+            />
+
             <div className="seven-day-grid">
               {nextSevenDays.map((day, index) => {
                 const key = toDateKey(day, appConfig.timezone);
@@ -1111,37 +1117,51 @@ export default function ClientDashboard({
                 </div>
                 <div className="household-access-panel">
                   <div className="household-access-copy">
-                    <strong>Approved sign-ins and linked calendars</strong>
+                    <strong>Members and invites</strong>
                     <small>
-                      Added emails can sign in with Google. Calendar ID defaults to
-                      the same email and must be shared with the hub Google account.
+                      Invite real accounts with email, or add local-only members for
+                      children and shared profiles.
                     </small>
                   </div>
 
                   <div className="household-account-list">
-                    {accounts.map((account) => (
-                      <div key={account.email} className="household-account-row">
+                    {hubMembers.map((account) => (
+                      <div key={account.id} className="household-account-row">
                         <div>
-                          <strong>{account.name ?? account.email}</strong>
-                          <small>{account.email}</small>
+                          <strong>{account.displayName}</strong>
                           <small>
-                            Calendar: {account.calendarId?.trim() || account.email}
+                            {account.type === "account"
+                              ? account.email ?? "No email"
+                              : "Local profile"}
+                          </small>
+                          <small>
+                            {account.role} ·{" "}
+                            {account.type === "account"
+                              ? account.calendarConnected
+                                ? "Calendar connected"
+                                : "Calendar not connected"
+                              : "No calendar sync"}
                           </small>
                         </div>
                         <button
                           type="button"
                           className="account-remove-button"
                           onClick={() => void handleRemoveHouseholdAccount(account)}
-                          disabled={accountPending}
-                          aria-label={`Remove ${account.email}`}
+                          disabled={
+                            !canManageMembers ||
+                            accountPending ||
+                            account.role === "owner" ||
+                            account.uid === currentUser.uid
+                          }
+                          aria-label={`Remove ${account.displayName}`}
                         >
                           <Trash2 size={15} />
                         </button>
                       </div>
                     ))}
-                    {!accounts.length && !accountsLoading ? (
+                    {!hubMembers.length && !directoryLoading ? (
                       <p className="quiet-note">
-                        No extra family accounts yet.
+                        No active members yet.
                       </p>
                     ) : null}
                   </div>
@@ -1151,13 +1171,6 @@ export default function ClientDashboard({
                     onSubmit={handleAddHouseholdAccount}
                   >
                     <input
-                      value={accountDisplayName}
-                      onChange={(event) => setAccountDisplayName(event.target.value)}
-                      placeholder="Name"
-                      aria-label="Family account name"
-                      maxLength={40}
-                    />
-                    <input
                       value={accountEmail}
                       onChange={(event) => setAccountEmail(event.target.value)}
                       placeholder="Email"
@@ -1165,20 +1178,37 @@ export default function ClientDashboard({
                       type="email"
                       maxLength={120}
                     />
-                    <input
-                      value={accountCalendarId}
-                      onChange={(event) => setAccountCalendarId(event.target.value)}
-                      placeholder="Calendar ID (optional)"
-                      aria-label="Calendar ID"
-                      maxLength={160}
-                    />
-                    <button type="submit" disabled={accountPending}>
-                      <UserPlus size={17} /> Add account
+                    <select
+                      value={accountRole}
+                      onChange={(event) =>
+                        setAccountRole(event.target.value === "admin" ? "admin" : "member")
+                      }
+                      aria-label="Invite role"
+                    >
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button type="submit" disabled={accountPending || !canManageMembers}>
+                      <UserPlus size={17} /> Invite member
                     </button>
                   </form>
 
-                  {accountError || accountsError ? (
-                    <p className="quiet-note">{accountError ?? accountsError}</p>
+                  {invites.length ? (
+                    <div className="household-account-list">
+                      {invites.map((invite) => (
+                        <div key={invite.id} className="household-account-row">
+                          <div>
+                            <strong>{invite.email}</strong>
+                            <small>{invite.role}</small>
+                            <small>Invite pending</small>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {accountError || directoryError ? (
+                    <p className="quiet-note">{accountError ?? directoryError}</p>
                   ) : null}
                 </div>
               </section>
@@ -1213,10 +1243,35 @@ export default function ClientDashboard({
                     aria-label="New family member name"
                     maxLength={30}
                   />
-                  <button type="submit">
-                    <UserPlus size={17} /> Add
+                  <select
+                    value={memberRole}
+                    onChange={(event) => setMemberRole(event.target.value)}
+                    aria-label="Local member role"
+                  >
+                    <option value="local">Local</option>
+                    <option value="child">Child</option>
+                    <option value="member">Member</option>
+                  </select>
+                  <select
+                    value={memberColor}
+                    onChange={(event) => setMemberColor(event.target.value)}
+                    aria-label="Local member color"
+                  >
+                    {ACCENT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="submit" disabled={accountPending || !canManageMembers}>
+                    <UserPlus size={17} /> Add local
                   </button>
                 </form>
+                {!canManageMembers ? (
+                  <p className="quiet-note">
+                    Only hub owners and admins can change members.
+                  </p>
+                ) : null}
               </section>
 
               <section className="settings-card">

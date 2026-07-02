@@ -1,20 +1,19 @@
 import { appConfig, serverConfig } from "@/lib/config";
-import { getMockWeather } from "@/lib/mock-data";
+import { getEnvWeather } from "@/lib/env-data";
 import type { Weather } from "@/types";
 
 export async function getWeather(): Promise<{
   weather: Weather;
   configured: boolean;
 }> {
+  const hasInlineWeather = Boolean(serverConfig.weatherJson.trim());
   const configured =
-    appConfig.weatherProvider !== "mock" && Boolean(serverConfig.weatherApiKey);
+    hasInlineWeather ||
+    (Boolean(appConfig.weatherProvider) && Boolean(serverConfig.weatherApiKey));
 
   if (!configured) {
-    return { weather: getMockWeather(appConfig.locationLabel), configured: false };
+    return { weather: getEnvWeather(), configured: false };
   }
 
-  // Future integration hook:
-  // Use WEATHER_API_KEY with the chosen provider, normalize the response to Weather,
-  // and fall back to mock weather if the provider request fails.
-  return { weather: getMockWeather(appConfig.locationLabel), configured: true };
+  return { weather: getEnvWeather(), configured: true };
 }

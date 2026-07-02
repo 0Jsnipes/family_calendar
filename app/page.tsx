@@ -1,10 +1,13 @@
+import { connection } from "next/server";
 import { cookies } from "next/headers";
 import ClientDashboard from "@/components/ClientDashboard";
+import HubAccessScreen from "@/components/HubAccessScreen";
 import SignInScreen from "@/components/SignInScreen";
 import { appConfig } from "@/lib/config";
 import { getCalendarEvents } from "@/lib/calendar";
+import { getEnvChores, getEnvFamilyMembers, getEnvMealPlan } from "@/lib/env-data";
 import { sessionCookieName, verifySessionCookie } from "@/lib/firebase/admin";
-import { getChores, getFamilyMembers, getMealPlan } from "@/lib/mock-data";
+import { getHubSummaryForUser, listActiveHubMembers, toFamilyMember } from "@/lib/hub";
 import { getWeather } from "@/lib/weather";
 
 function getViewFromSearchParams(searchParams?: {
@@ -39,6 +42,8 @@ export default async function Page({
     kiosk?: string | string[];
   }>;
 }) {
+  await connection();
+
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(sessionCookieName)?.value;
@@ -48,15 +53,28 @@ export default async function Page({
     return <SignInScreen />;
   }
 
+  const hubAccess = await getHubSummaryForUser(currentUser);
+  if (!hubAccess.member || !hubAccess.hub) {
+    return (
+      <HubAccessScreen
+        hasPendingInvite={hubAccess.pendingInvites.length > 0}
+        pendingInviteId={hubAccess.pendingInvites[0]?.id}
+      />
+    );
+  }
+
+  const activeHubMembers = await listActiveHubMembers();
   const [calendar, weather] = await Promise.all([
     getCalendarEvents(),
     getWeather(),
   ]);
   const data = {
-    familyMembers: getFamilyMembers(),
+    familyMembers: activeHubMembers.length
+      ? activeHubMembers.map(toFamilyMember)
+      : getEnvFamilyMembers(),
     events: calendar.events,
-    chores: getChores(),
-    mealPlan: getMealPlan(),
+    chores: getEnvChores(),
+    mealPlan: getEnvMealPlan(),
     weather: weather.weather,
     lastUpdated: new Date().toISOString(),
     providers: {
@@ -71,6 +89,7 @@ export default async function Page({
       initialView={getViewFromSearchParams(resolvedSearchParams)}
       kioskMode={getKioskFromSearchParams(resolvedSearchParams)}
       currentUser={currentUser}
+      currentUserRole={hubAccess.member.role}
     />
   );
 }

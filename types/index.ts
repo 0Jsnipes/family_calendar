@@ -17,6 +17,12 @@ export type FamilyMember = {
   initials: string;
   color: string;
   avatarUrl?: string;
+  memberType?: "account" | "local";
+  email?: string | null;
+  status?: "active" | "removed";
+  calendarConnected?: boolean;
+  showCalendarOnHub?: boolean;
+  uid?: string | null;
 };
 
 export type CalendarEvent = {
@@ -30,6 +36,20 @@ export type CalendarEvent = {
   location?: string;
   description?: string;
   source?: "mock" | "google";
+};
+
+export type HubCalendarEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end: string | null;
+  allDay: boolean;
+  calendarId: string;
+  memberId?: string;
+  ownerUid: string;
+  ownerName?: string;
+  ownerColor?: string;
+  location?: string;
 };
 
 export type Chore = {
@@ -77,10 +97,39 @@ export type AuthenticatedUser = {
   picture?: string;
 };
 
-export type HouseholdAccount = {
+export type HubMemberRole = "owner" | "admin" | "member" | "child" | "local";
+
+export type HubMemberRecord = {
+  id: string;
+  type: "account" | "local";
+  uid: string | null;
+  email: string | null;
+  displayName: string;
+  role: HubMemberRole;
+  status: "active" | "removed";
+  calendarConnected: boolean;
+  showCalendarOnHub: boolean;
+  color: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  joinedAt?: string | null;
+};
+
+export type HubInviteRecord = {
+  id: string;
   email: string;
-  name?: string;
-  calendarId?: string;
-  status: "active";
-  createdBy?: string;
+  role: "admin" | "member";
+  status: "pending" | "accepted" | "expired" | "revoked";
+  createdBy: string;
+  createdAt?: string | null;
+  expiresAt?: string | null;
+  acceptedByUid?: string | null;
+  acceptedAt?: string | null;
+};
+
+export type HubSummary = {
+  id: string;
+  name: string;
+  ownerUid: string;
+  currentUserRole: HubMemberRole;
 };

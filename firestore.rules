@@ -17,12 +17,5 @@ service cloud.firestore {
       }
     }
 
-    match /households/{householdId} {
-      allow read, write: if hasEmail();
-
-      match /accounts/{accountId} {
-        allow read, write: if hasEmail();
-      }
-    }
   }
 }

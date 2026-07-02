@@ -113,6 +113,20 @@ body {
   font-weight: 800;
 }
 
+.access-action-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.access-inline-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 button,
 input,
 textarea,
@@ -846,6 +860,84 @@ p {
   color: var(--accent);
 }
 
+.google-calendar-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 22px;
+  padding: clamp(14px, 1.4vw, 18px);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.google-calendar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.google-calendar-header h3 {
+  margin-top: 4px;
+  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.google-calendar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.secondary-button {
+  min-height: 43px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 15px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--fg);
+  font-weight: 900;
+}
+
+.google-calendar-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.google-calendar-events {
+  display: grid;
+  gap: 8px;
+}
+
+.google-calendar-event {
+  min-width: 0;
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid var(--accent);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.google-calendar-event strong {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.google-calendar-event p,
+.google-calendar-event small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
 .seven-day-grid {
   flex: 1 1 auto;
   min-height: 0;
@@ -1243,7 +1335,7 @@ p {
 
 .household-account-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(0, 1fr) 140px auto;
   gap: 7px;
 }
 
@@ -1320,6 +1412,18 @@ p {
   min-width: 0;
   min-height: 36px;
   flex: 1 1 auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 11px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.75);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.member-form select,
+.household-account-form select {
+  min-width: 0;
+  min-height: 36px;
   border: 1px solid var(--panel-border);
   border-radius: 11px;
   padding: 7px 10px;

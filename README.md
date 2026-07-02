@@ -6,7 +6,7 @@ Family Hub is a standalone family calendar dashboard built for a wall-mounted ta
 
 - Shows today, week, and month calendar views
 - Surfaces chores, meal planning, weather, and family status
-- Runs fully in mock mode when env vars are empty
+- Loads dashboard content from environment variables
 - Is ready for later Google Calendar and weather integration
 - Supports kiosk-style full-screen display and standby screensaver behavior
 
@@ -19,15 +19,12 @@ npm run dev
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and leave values blank until you connect real services.
+Copy `.env.example` to `.env.local` and update the JSON-backed values for your household.
 
 - `NEXT_PUBLIC_*` values are safe for the client
 - Secret Google and weather keys stay server-side only
-- Mock data is used automatically when credentials are missing
-
-## Mock mode
-
-The app ships with dynamic mock calendar events, chores, meals, family members, and weather. It generates dates relative to the current day so the UI stays realistic without hardcoded stale dates.
+- `FAMILY_MEMBERS_JSON`, `CHORES_JSON`, `MEAL_PLAN_JSON`, and `WEATHER_JSON` are read on the server at request time
+- Calendar events stay empty until Google Calendar credentials are connected
 
 ## Connecting Google Calendar later
 

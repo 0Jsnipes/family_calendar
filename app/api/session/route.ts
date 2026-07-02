@@ -4,7 +4,7 @@ import {
   isFirebaseAdminConfigured,
   sessionCookieName,
   sessionDurationMs,
-  verifyIdTokenForAllowedUser,
+  verifyIdToken,
 } from "@/lib/firebase/admin";
 
 export async function POST(request: Request) {
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await verifyIdTokenForAllowedUser(idToken);
+    await verifyIdToken(idToken);
 
     const sessionCookie = await getFirebaseAdminAuth().createSessionCookie(idToken, {
       expiresIn: sessionDurationMs,
@@ -41,13 +41,8 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch (error) {
-    const message =
-      error instanceof Error && error.message === "unauthorized-email"
-        ? "This Google account is not allowed."
-        : "Unable to create a session.";
-
-    return NextResponse.json({ error: message }, { status: 401 });
+  } catch {
+    return NextResponse.json({ error: "Unable to create a session." }, { status: 401 });
   }
 }
 

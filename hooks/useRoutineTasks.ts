@@ -70,16 +70,23 @@ export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
 
   useEffect(() => {
     if (!dayRef || !tasksRef) {
-      setTasks(defaultTasks);
-      setLoading(false);
-      return;
+      const timeoutId = window.setTimeout(() => {
+        setTasks(defaultTasks);
+        setLoading(false);
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
     }
 
     const currentDayRef = dayRef;
     const currentTasksRef = tasksRef;
 
     let ignore = false;
-    setLoading(true);
+    const loadingTimeoutId = window.setTimeout(() => {
+      if (!ignore) {
+        setLoading(true);
+      }
+    }, 0);
 
     async function ensureDayInitialized() {
       const daySnapshot = await getDoc(currentDayRef);
@@ -138,6 +145,7 @@ export function useRoutineTasks(dateKey: string, defaultTasks: RoutineTask[]) {
 
     return () => {
       ignore = true;
+      window.clearTimeout(loadingTimeoutId);
       unsubscribe();
     };
   }, [dateKey, dayRef, defaultTasks, tasksRef]);
