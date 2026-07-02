@@ -124,6 +124,7 @@ export async function maybeBootstrapDefaultHub(user: VerifiedSessionUser) {
 }
 
 export async function getActiveHubMembershipForUser(uid: string) {
+  if (!isFirebaseAdminConfigured()) return null;
   const snapshot = await membersRef().doc(uid).get();
   if (!snapshot.exists) return null;
   const member = mapHubMember(snapshot.id, snapshot.data() as Partial<HubMemberRecord>);
@@ -131,6 +132,7 @@ export async function getActiveHubMembershipForUser(uid: string) {
 }
 
 export async function getPendingInvitesForEmail(email: string) {
+  if (!isFirebaseAdminConfigured()) return [] as HubInviteRecord[];
   const normalizedEmail = normalizeEmail(email);
   const snapshot = await invitesRef()
     .where("email", "==", normalizedEmail)
@@ -147,6 +149,10 @@ export async function getHubSummaryForUser(user: VerifiedSessionUser): Promise<{
   member: HubMemberRecord | null;
   pendingInvites: HubInviteRecord[];
 }> {
+  if (!isFirebaseAdminConfigured()) {
+    return { hub: null, member: null, pendingInvites: [] };
+  }
+
   await maybeBootstrapDefaultHub(user);
 
   const [hubSnapshot, member, pendingInvites] = await Promise.all([
@@ -173,6 +179,7 @@ export async function getHubSummaryForUser(user: VerifiedSessionUser): Promise<{
 }
 
 export async function listActiveHubMembers() {
+  if (!isFirebaseAdminConfigured()) return [] as HubMemberRecord[];
   const snapshot = await membersRef().where("status", "==", "active").get();
   return snapshot.docs
     .map((doc) => mapHubMember(doc.id, doc.data() as Partial<HubMemberRecord>))
@@ -180,6 +187,7 @@ export async function listActiveHubMembers() {
 }
 
 export async function listPendingHubInvites() {
+  if (!isFirebaseAdminConfigured()) return [] as HubInviteRecord[];
   const snapshot = await invitesRef().where("status", "==", "pending").get();
   return snapshot.docs
     .map((doc) => mapInvite(doc.id, doc.data()))
@@ -212,6 +220,9 @@ export async function createHubInvite(input: {
   role: "admin" | "member";
   createdBy: string;
 }) {
+  if (!isFirebaseAdminConfigured()) {
+    throw new Error("firebase-admin-not-configured");
+  }
   const email = normalizeEmail(input.email);
   const token = randomBytes(24).toString("hex");
   const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -244,6 +255,9 @@ export async function addLocalHubMember(input: {
   role: HubMemberRole;
   color: string;
 }) {
+  if (!isFirebaseAdminConfigured()) {
+    throw new Error("firebase-admin-not-configured");
+  }
   const memberRef = membersRef().doc();
   await memberRef.set({
     type: "local",
@@ -261,6 +275,9 @@ export async function addLocalHubMember(input: {
 }
 
 export async function removeHubMember(memberId: string) {
+  if (!isFirebaseAdminConfigured()) {
+    throw new Error("firebase-admin-not-configured");
+  }
   await membersRef().doc(memberId).set(
     {
       status: "removed",
@@ -272,6 +289,7 @@ export async function removeHubMember(memberId: string) {
 }
 
 export async function setMemberCalendarConnection(uid: string, connected: boolean) {
+  if (!isFirebaseAdminConfigured()) return;
   await membersRef().doc(uid).set(
     {
       calendarConnected: connected,
@@ -283,6 +301,7 @@ export async function setMemberCalendarConnection(uid: string, connected: boolea
 }
 
 async function findInviteByTokenHash(tokenHash: string) {
+  if (!isFirebaseAdminConfigured()) return null;
   const snapshot = await invitesRef()
     .where("tokenHash", "==", tokenHash)
     .where("status", "==", "pending")
@@ -297,6 +316,9 @@ export async function acceptHubInviteForUser(input: {
   inviteId?: string;
   user: VerifiedSessionUser;
 }) {
+  if (!isFirebaseAdminConfigured()) {
+    throw new Error("firebase-admin-not-configured");
+  }
   const normalizedEmail = normalizeEmail(input.user.email);
   const inviteDoc =
     input.inviteId

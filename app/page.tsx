@@ -53,7 +53,12 @@ export default async function Page({
     return <SignInScreen />;
   }
 
-  const hubAccess = await getHubSummaryForUser(currentUser);
+  let hubAccess;
+  try {
+    hubAccess = await getHubSummaryForUser(currentUser);
+  } catch {
+    return <HubAccessScreen hasPendingInvite={false} />;
+  }
   if (!hubAccess.member || !hubAccess.hub) {
     return (
       <HubAccessScreen
