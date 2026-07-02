@@ -180,19 +180,27 @@ export async function getHubSummaryForUser(user: VerifiedSessionUser): Promise<{
 
 export async function listActiveHubMembers() {
   if (!isFirebaseAdminConfigured()) return [] as HubMemberRecord[];
-  const snapshot = await membersRef().where("status", "==", "active").get();
-  return snapshot.docs
-    .map((doc) => mapHubMember(doc.id, doc.data() as Partial<HubMemberRecord>))
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  try {
+    const snapshot = await membersRef().where("status", "==", "active").get();
+    return snapshot.docs
+      .map((doc) => mapHubMember(doc.id, doc.data() as Partial<HubMemberRecord>))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  } catch {
+    return [] as HubMemberRecord[];
+  }
 }
 
 export async function listPendingHubInvites() {
   if (!isFirebaseAdminConfigured()) return [] as HubInviteRecord[];
-  const snapshot = await invitesRef().where("status", "==", "pending").get();
-  return snapshot.docs
-    .map((doc) => mapInvite(doc.id, doc.data()))
-    .filter((invite) => !invite.expiresAt || new Date(invite.expiresAt).getTime() > Date.now())
-    .sort((a, b) => a.email.localeCompare(b.email));
+  try {
+    const snapshot = await invitesRef().where("status", "==", "pending").get();
+    return snapshot.docs
+      .map((doc) => mapInvite(doc.id, doc.data()))
+      .filter((invite) => !invite.expiresAt || new Date(invite.expiresAt).getTime() > Date.now())
+      .sort((a, b) => a.email.localeCompare(b.email));
+  } catch {
+    return [] as HubInviteRecord[];
+  }
 }
 
 export function canManageHub(role?: HubMemberRole | null) {

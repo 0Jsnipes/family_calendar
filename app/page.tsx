@@ -68,10 +68,21 @@ export default async function Page({
     );
   }
 
-  const activeHubMembers = await listActiveHubMembers();
-  const [calendar, weather] = await Promise.all([
-    getCalendarEvents(),
-    getWeather(),
+  const [activeHubMembers, calendar, weather] = await Promise.all([
+    listActiveHubMembers().catch(() => []),
+    getCalendarEvents().catch(() => ({ events: [], configured: false })),
+    getWeather().catch(() => ({
+      weather: {
+        location: appConfig.locationLabel,
+        temperature: 0,
+        condition: "Unavailable",
+        high: 0,
+        low: 0,
+        icon: "cloud-off",
+        source: "api" as const,
+      },
+      configured: false,
+    })),
   ]);
   const data = {
     familyMembers: activeHubMembers.length
