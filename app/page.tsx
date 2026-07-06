@@ -42,74 +42,65 @@ export default async function Page({
     kiosk?: string | string[];
   }>;
 }) {
-  try {
-    await connection();
+  await connection();
 
-    const resolvedSearchParams = searchParams ? await searchParams : undefined;
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get(sessionCookieName)?.value;
-    const currentUser = await verifySessionCookie(sessionCookie);
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get(sessionCookieName)?.value;
+  const currentUser = await verifySessionCookie(sessionCookie);
 
-    if (!currentUser) {
-      return <SignInScreen />;
-    }
-
-    let hubAccess;
-    try {
-      hubAccess = await getHubSummaryForUser(currentUser);
-    } catch {
-      return <HubAccessScreen hasPendingInvite={false} />;
-    }
-    if (!hubAccess.member || !hubAccess.hub) {
-      return (
-        <HubAccessScreen
-          hasPendingInvite={hubAccess.pendingInvites.length > 0}
-          pendingInviteId={hubAccess.pendingInvites[0]?.id}
-        />
-      );
-    }
-
-    const [activeHubMembers, calendar, weather] = await Promise.all([
-      listActiveHubMembers().catch(() => []),
-      getCalendarEvents().catch(() => ({ events: [], configured: false })),
-      getWeather().catch(() => ({
-        weather: {
-          location: appConfig.locationLabel,
-          temperature: 0,
-          condition: "Unavailable",
-          high: 0,
-          low: 0,
-          icon: "cloud-off",
-          source: "api" as const,
-        },
-        configured: false,
-      })),
-    ]);
-    const data = {
-      familyMembers: activeHubMembers.length
-        ? activeHubMembers.map(toFamilyMember)
-        : getEnvFamilyMembers(),
-      events: calendar.events,
-      chores: getEnvChores(),
-      mealPlan: getEnvMealPlan(),
-      weather: weather.weather,
-      lastUpdated: new Date().toISOString(),
-      providers: {
-        calendarConfigured: calendar.configured,
-        weatherConfigured: weather.configured,
-      },
-    };
-
-    return (
-      <ClientDashboard
-        data={data}
-        initialView={getViewFromSearchParams(resolvedSearchParams)}
-        kioskMode={getKioskFromSearchParams(resolvedSearchParams)}
-        currentUser={currentUser}
-        currentUserRole={hubAccess.member.role}
-      />
-    );
-  } catch {
+  if (!currentUser) {
     return <SignInScreen />;
   }
+
+  const hubAccess = await getHubSummaryForUser(currentUser).catch(() => null);
+  if (!hubAccess?.member || !hubAccess.hub) {
+    return (
+      <HubAccessScreen
+        hasPendingInvite={Boolean(hubAccess?.pendingInvites.length)}
+        pendingInviteId={hubAccess?.pendingInvites[0]?.id}
+      />
+    );
+  }
+
+  const [activeHubMembers, calendar, weather] = await Promise.all([
+    listActiveHubMembers().catch(() => []),
+    getCalendarEvents().catch(() => ({ events: [], configured: false })),
+    getWeather().catch(() => ({
+      weather: {
+        location: appConfig.locationLabel,
+        temperature: 0,
+        condition: "Unavailable",
+        high: 0,
+        low: 0,
+        icon: "cloud-off",
+        source: "api" as const,
+      },
+      configured: false,
+    })),
+  ]);
+  const data = {
+    familyMembers: activeHubMembers.length
+      ? activeHubMembers.map(toFamilyMember)
+      : getEnvFamilyMembers(),
+    events: calendar.events,
+    chores: getEnvChores(),
+    mealPlan: getEnvMealPlan(),
+    weather: weather.weather,
+    lastUpdated: new Date().toISOString(),
+    providers: {
+      calendarConfigured: calendar.configured,
+      weatherConfigured: weather.configured,
+    },
+  };
+
+  return (
+    <ClientDashboard
+      data={data}
+      initialView={getViewFromSearchParams(resolvedSearchParams)}
+      kioskMode={getKioskFromSearchParams(resolvedSearchParams)}
+      currentUser={currentUser}
+      currentUserRole={hubAccess.member.role}
+    />
+  );
 }
