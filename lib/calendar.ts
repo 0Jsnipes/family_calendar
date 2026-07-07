@@ -2,6 +2,7 @@ import "server-only";
 
 import { FieldValue } from "firebase-admin/firestore";
 import { google } from "googleapis";
+import { getFirebaseAdminDb, isFirebaseAdminConfigured } from "@/lib/firebase/admin-core";
 import { decryptToken } from "@/lib/tokenCrypto";
 import { getGoogleCalendarOAuthClient } from "@/lib/googleCalendarOAuth";
 import {
@@ -19,6 +20,44 @@ type GoogleCalendarApiEvent = {
   start?: { dateTime?: string | null; date?: string | null } | null;
   end?: { dateTime?: string | null; date?: string | null } | null;
 };
+
+type HubCalendarEventDoc = {
+  title?: string;
+  start?: string;
+  end?: string | null;
+  allDay?: boolean;
+  ownerId?: string | null;
+  location?: string | null;
+  description?: string | null;
+};
+
+const DEFAULT_HUB_ID = "default";
+
+function calendarEventsRef(hubId = DEFAULT_HUB_ID) {
+  return getFirebaseAdminDb().collection("hubs").doc(hubId).collection("calendarEvents");
+}
+
+function mapHubCalendarEventToCalendarEvent(
+  eventId: string,
+  data: HubCalendarEventDoc,
+): CalendarEvent | null {
+  if (!data.title?.trim() || !data.start?.trim()) {
+    return null;
+  }
+
+  return {
+    id: eventId,
+    title: data.title.trim(),
+    start: data.start,
+    end: data.end ?? undefined,
+    allDay: Boolean(data.allDay),
+    ownerId: data.ownerId ?? undefined,
+    category: "family",
+    location: data.location?.trim() || undefined,
+    description: data.description?.trim() || undefined,
+    source: "hub",
+  };
+}
 
 function mapGoogleEventToCalendarEvent(
   event: GoogleCalendarApiEvent,
@@ -45,10 +84,86 @@ function mapGoogleEventToCalendarEvent(
   };
 }
 
+async function listHubCalendarEvents() {
+  if (!isFirebaseAdminConfigured()) {
+    return [] as CalendarEvent[];
+  }
+
+  try {
+    const snapshot = await calendarEventsRef().orderBy("start", "asc").limit(250).get();
+    return snapshot.docs
+      .map((doc) =>
+        mapHubCalendarEventToCalendarEvent(doc.id, doc.data() as HubCalendarEventDoc),
+      )
+      .filter((event): event is CalendarEvent => Boolean(event));
+  } catch {
+    return [] as CalendarEvent[];
+  }
+}
+
+export async function createHubCalendarEvent(input: {
+  title: string;
+  start: string;
+  end?: string;
+  allDay: boolean;
+  ownerId?: string;
+  location?: string;
+  description?: string;
+}) {
+  if (!isFirebaseAdminConfigured()) {
+    throw new Error("firebase-admin-not-configured");
+  }
+
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("calendar-title-required");
+  }
+
+  const start = new Date(input.start);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error("calendar-start-invalid");
+  }
+
+  const end = input.end ? new Date(input.end) : null;
+  if (end && Number.isNaN(end.getTime())) {
+    throw new Error("calendar-end-invalid");
+  }
+  if (end && end.getTime() < start.getTime()) {
+    throw new Error("calendar-end-before-start");
+  }
+
+  const eventRef = calendarEventsRef().doc();
+  await eventRef.set({
+    title,
+    start: start.toISOString(),
+    end: end ? end.toISOString() : null,
+    allDay: input.allDay,
+    ownerId: input.ownerId?.trim() || null,
+    location: input.location?.trim() || null,
+    description: input.description?.trim() || null,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  return {
+    id: eventRef.id,
+    title,
+    start: start.toISOString(),
+    end: end ? end.toISOString() : undefined,
+    allDay: input.allDay,
+    ownerId: input.ownerId?.trim() || undefined,
+    category: "family",
+    location: input.location?.trim() || undefined,
+    description: input.description?.trim() || undefined,
+    source: "hub",
+  } satisfies CalendarEvent;
+}
+
 export async function getCalendarEvents(): Promise<{
   events: CalendarEvent[];
   configured: boolean;
 }> {
+  const hubEvents = await listHubCalendarEvents();
   const members = await listActiveHubMembers();
   const calendarMembers = members.filter(
     (member) =>
@@ -59,7 +174,7 @@ export async function getCalendarEvents(): Promise<{
   );
 
   if (!calendarMembers.length) {
-    return { events: [], configured: false };
+    return { events: hubEvents, configured: hubEvents.length > 0 };
   }
 
   try {
@@ -131,10 +246,12 @@ export async function getCalendarEvents(): Promise<{
     );
 
     return {
-      events: allEvents.flat().sort((a, b) => a.start.localeCompare(b.start)),
+      events: [...hubEvents, ...allEvents.flat()].sort((a, b) =>
+        a.start.localeCompare(b.start),
+      ),
       configured: true,
     };
   } catch {
-    return { events: [], configured: true };
+    return { events: hubEvents, configured: true };
   }
 }

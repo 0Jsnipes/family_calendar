@@ -95,6 +95,14 @@ type FamilyNote = {
   createdAt: string;
 };
 
+type EventComposerState = {
+  title: string;
+  location: string;
+  allDay: boolean;
+  startTime: string;
+  endTime: string;
+};
+
 type HubSettings = {
   accent: string;
   idleMinutes: number;
@@ -175,6 +183,52 @@ function getStartOfDay(date: Date) {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
   return copy;
+}
+
+function formatTimeForInput(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+}
+
+function getDefaultEventComposerState(date: Date): EventComposerState {
+  const start = new Date(date);
+  start.setHours(9, 0, 0, 0);
+  const end = new Date(date);
+  end.setHours(10, 0, 0, 0);
+
+  return {
+    title: "",
+    location: "",
+    allDay: false,
+    startTime: formatTimeForInput(start),
+    endTime: formatTimeForInput(end),
+  };
+}
+
+function buildEventIso(date: Date, time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hours,
+    minutes,
+    0,
+    0,
+  ).toISOString();
+}
+
+function buildAllDayEventIso(date: Date, dayOffset = 0) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() + dayOffset,
+    12,
+    0,
+    0,
+    0,
+  ).toISOString();
 }
 
 function getMonthDays(date: Date) {
@@ -265,6 +319,13 @@ export default function ClientDashboard({
   const [hasLoadedNotes, setHasLoadedNotes] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteColor, setNoteColor] = useState(NOTE_COLORS[0]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(data.events);
+  const [isEventComposerOpen, setIsEventComposerOpen] = useState(false);
+  const [eventComposer, setEventComposer] = useState<EventComposerState>(() =>
+    getDefaultEventComposerState(now),
+  );
+  const [eventPending, setEventPending] = useState(false);
+  const [eventError, setEventError] = useState<string | null>(null);
   const [memberName, setMemberName] = useState("");
   const [memberRole, setMemberRole] = useState("local");
   const [memberColor, setMemberColor] = useState<string>(ACCENT_OPTIONS[1].value);
@@ -275,6 +336,7 @@ export default function ClientDashboard({
   const carouselRef = useRef<HTMLDivElement>(null);
 
   const {
+    firebaseUser,
     members: hubMembers,
     invites,
     loading: directoryLoading,
@@ -368,6 +430,16 @@ export default function ClientDashboard({
   }, [hasLoadedNotes, notes]);
 
   useEffect(() => {
+    setCalendarEvents(data.events);
+  }, [data.events]);
+
+  useEffect(() => {
+    if (!isEventComposerOpen) return;
+    setEventComposer(getDefaultEventComposerState(selectedDate));
+    setEventError(null);
+  }, [isEventComposerOpen, selectedDate]);
+
+  useEffect(() => {
     if (settings.idleMinutes === 0) {
       return;
     }
@@ -436,8 +508,8 @@ export default function ClientDashboard({
   }, [activePage, goToPage]);
 
   const sortedEvents = useMemo(
-    () => [...data.events].sort((a, b) => a.start.localeCompare(b.start)),
-    [data.events],
+    () => [...calendarEvents].sort((a, b) => a.start.localeCompare(b.start)),
+    [calendarEvents],
   );
   const selectedDateKey = toDateKey(selectedDate, appConfig.timezone);
   const todaysEvents = sortedEvents.filter(
@@ -477,6 +549,16 @@ export default function ClientDashboard({
   const routineTasks = tasks.slice(0, MAX_ROUTINE_TASKS);
   const drawerTasks = tasks.slice(0, MAX_DRAWER_TASKS);
   const hiddenDrawerTaskCount = Math.max(tasks.length - drawerTasks.length, 0);
+
+  function resetEventComposer(date: Date) {
+    setEventComposer(getDefaultEventComposerState(date));
+    setEventError(null);
+  }
+
+  function openEventComposer(date: Date) {
+    resetEventComposer(date);
+    setIsEventComposerOpen(true);
+  }
 
   async function handleAddTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -568,6 +650,77 @@ export default function ClientDashboard({
       );
     } finally {
       setAccountPending(false);
+    }
+  }
+
+  async function handleCreateCalendarEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!firebaseUser) {
+      setEventError("You must be signed in to add calendar events.");
+      return;
+    }
+
+    const title = eventComposer.title.trim();
+    if (!title) {
+      setEventError("Event title is required.");
+      return;
+    }
+
+    const start = eventComposer.allDay
+      ? buildAllDayEventIso(selectedDate)
+      : buildEventIso(selectedDate, eventComposer.startTime);
+    const end = eventComposer.allDay
+      ? buildAllDayEventIso(selectedDate, 1)
+      : buildEventIso(selectedDate, eventComposer.endTime);
+
+    if (!eventComposer.allDay && new Date(end).getTime() < new Date(start).getTime()) {
+      setEventError("End time must be after the start time.");
+      return;
+    }
+
+    setEventPending(true);
+    setEventError(null);
+
+    try {
+      const response = await fetch("/api/calendar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`,
+        },
+        body: JSON.stringify({
+          title,
+          start,
+          end,
+          allDay: eventComposer.allDay,
+          location: eventComposer.location.trim() || undefined,
+        }),
+      });
+      const payload = (await response.json()) as {
+        event?: CalendarEvent;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.event) {
+        throw new Error(payload.error ?? "Unable to create event.");
+      }
+
+      setCalendarEvents((currentEvents) =>
+        [...currentEvents, payload.event!].sort((a, b) =>
+          a.start.localeCompare(b.start),
+        ),
+      );
+      setIsEventComposerOpen(false);
+      resetEventComposer(selectedDate);
+    } catch (caughtError) {
+      setEventError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to create event.",
+      );
+    } finally {
+      setEventPending(false);
     }
   }
 
@@ -806,7 +959,12 @@ export default function ClientDashboard({
                           ? "outside-month"
                           : ""
                       }`}
-                      onClick={() => setSelectedDate(day)}
+                      onClick={() => {
+                        setSelectedDate(day);
+                        if (isEventComposerOpen) {
+                          resetEventComposer(day);
+                        }
+                      }}
                       aria-label={`${formatShortDate(
                         day,
                         appConfig.timezone,
@@ -853,14 +1011,123 @@ export default function ClientDashboard({
                     <p className="eyebrow">Selected day</p>
                     <h3>{formatShortDate(selectedDate, appConfig.timezone)}</h3>
                   </div>
-                  <span>
-                    {selectedEvents.length === 1
-                      ? "1 event"
-                      : `${selectedEvents.length} events`}
-                  </span>
+                  <div className="selected-day-meta">
+                    <span>
+                      {selectedEvents.length === 1
+                        ? "1 event"
+                        : `${selectedEvents.length} events`}
+                    </span>
+                    <button
+                      type="button"
+                      className="calendar-create-button"
+                      onClick={() => openEventComposer(selectedDate)}
+                    >
+                      <Plus size={15} /> Add event
+                    </button>
+                  </div>
                 </div>
 
                 <div className="selected-event-list">
+                  {isEventComposerOpen ? (
+                    <form
+                      className="event-composer"
+                      onSubmit={handleCreateCalendarEvent}
+                    >
+                      <input
+                        value={eventComposer.title}
+                        onChange={(composeEvent) =>
+                          setEventComposer((current) => ({
+                            ...current,
+                            title: composeEvent.target.value,
+                          }))
+                        }
+                        placeholder="Dinner, soccer, dentist..."
+                        aria-label="Event title"
+                        maxLength={100}
+                      />
+                      <input
+                        value={eventComposer.location}
+                        onChange={(composeEvent) =>
+                          setEventComposer((current) => ({
+                            ...current,
+                            location: composeEvent.target.value,
+                          }))
+                        }
+                        placeholder="Location (optional)"
+                        aria-label="Event location"
+                        maxLength={120}
+                      />
+                      <label className="event-toggle">
+                        <input
+                          type="checkbox"
+                          checked={eventComposer.allDay}
+                          onChange={(composeEvent) =>
+                            setEventComposer((current) => ({
+                              ...current,
+                              allDay: composeEvent.target.checked,
+                            }))
+                          }
+                        />
+                        <span>All day</span>
+                      </label>
+                      {!eventComposer.allDay ? (
+                        <div className="event-time-row">
+                          <label>
+                            <span>Start</span>
+                            <input
+                              type="time"
+                              value={eventComposer.startTime}
+                              onChange={(composeEvent) =>
+                                setEventComposer((current) => ({
+                                  ...current,
+                                  startTime: composeEvent.target.value,
+                                }))
+                              }
+                              aria-label="Event start time"
+                            />
+                          </label>
+                          <label>
+                            <span>End</span>
+                            <input
+                              type="time"
+                              value={eventComposer.endTime}
+                              onChange={(composeEvent) =>
+                                setEventComposer((current) => ({
+                                  ...current,
+                                  endTime: composeEvent.target.value,
+                                }))
+                              }
+                              aria-label="Event end time"
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                      <div className="event-composer-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => {
+                            setIsEventComposerOpen(false);
+                            resetEventComposer(selectedDate);
+                          }}
+                          disabled={eventPending}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="primary-button"
+                          disabled={eventPending}
+                        >
+                          <Plus size={16} />
+                          {eventPending ? "Saving..." : "Save event"}
+                        </button>
+                      </div>
+                      {eventError ? (
+                        <p className="event-form-error">{eventError}</p>
+                      ) : null}
+                    </form>
+                  ) : null}
                   {selectedEvents.length ? (
                     selectedEvents
                       .slice(0, MAX_VISIBLE_EVENTS)
@@ -887,11 +1154,11 @@ export default function ClientDashboard({
                           </div>
                         );
                       })
-                  ) : (
+                  ) : !isEventComposerOpen ? (
                     <p className="empty-state">
                       Nothing planned. This day is all yours.
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </section>
             </article>

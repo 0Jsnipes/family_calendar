@@ -740,6 +740,11 @@ p {
   gap: 8px;
 }
 
+.selected-day-meta {
+  display: grid;
+  gap: 8px;
+}
+
 .selected-day-heading h3 {
   margin-top: 3px;
   font-size: clamp(1rem, 1.3vw, 1.25rem);
@@ -756,6 +761,21 @@ p {
   font-weight: 900;
 }
 
+.calendar-create-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--fg);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
 .selected-event-list {
   min-width: 0;
   min-height: 0;
@@ -765,6 +785,65 @@ p {
   gap: 6px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.event-composer {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.event-composer input {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--panel-border);
+  border-radius: 11px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--fg);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.event-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.event-time-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.event-time-row label {
+  display: grid;
+  gap: 4px;
+}
+
+.event-time-row span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.event-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.event-form-error {
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 800;
 }
 
 .selected-event {
@@ -1196,8 +1275,11 @@ p {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(180px, auto);
   gap: clamp(9px, 1.1vw, 15px);
+  align-content: start;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .settings-card {
@@ -1206,7 +1288,7 @@ p {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(23, 32, 51, 0.08);
   border-radius: 20px;
   padding: clamp(12px, 1.25vw, 17px);
@@ -1972,6 +2054,14 @@ html[data-reduce-motion="true"] *::after {
 
   .selected-event-list {
     grid-template-columns: 1fr;
+  }
+
+  .event-time-row {
+    grid-template-columns: 1fr;
+  }
+
+  .event-composer-actions {
+    flex-direction: column;
   }
 
   .hub-page {

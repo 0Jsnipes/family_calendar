@@ -35,7 +35,7 @@ export type CalendarEvent = {
   category: EventCategory;
   location?: string;
   description?: string;
-  source?: "mock" | "google";
+  source?: "mock" | "google" | "hub";
 };
 
 export type HubCalendarEvent = {
