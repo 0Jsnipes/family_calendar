@@ -1222,11 +1222,11 @@ export default function ClientDashboard({
           </div>
         </section>
 
-        <section className="hub-page" aria-label="Coming soon">
+        <section className="hub-page" aria-label="Next 7 Days">
           <article className="hub-panel full-page-panel coming-panel">
             <div className="page-heading">
               <div>
-                <p className="eyebrow">Coming soon</p>
+                <p className="eyebrow">Next 7 Days</p>
                 <h2>The next 7 days</h2>
                 <p className="page-subtitle">
                   {upcomingEvents.length} upcoming family moments
@@ -1749,7 +1749,7 @@ export default function ClientDashboard({
           aria-current={activePage === 1 ? "page" : undefined}
         >
           <CalendarRange size={18} />
-          <span>Coming soon</span>
+          <span>Next 7 Days</span>
         </button>
         <button
           type="button"
