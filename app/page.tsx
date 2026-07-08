@@ -8,7 +8,7 @@ import { getCalendarEvents } from "@/lib/calendar";
 import { getEnvChores, getEnvFamilyMembers, getEnvMealPlan } from "@/lib/env-data";
 import { sessionCookieName, verifySessionCookie } from "@/lib/firebase/admin";
 import { getHubSummaryForUser, listActiveHubMembers, toFamilyMember } from "@/lib/hub";
-import { getWeather } from "@/lib/weather";
+import { getWeather } from "@/lib/weather/weatherService";
 
 function getViewFromSearchParams(searchParams?: {
   view?: string | string[];

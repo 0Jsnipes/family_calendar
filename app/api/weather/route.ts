@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { fetchOpenMeteoWeather } from "@/lib/weather";
+import { getWeatherResponse } from "@/lib/weather/weatherService";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const timezone = searchParams.get("timezone");
 
   try {
-    const result = await fetchOpenMeteoWeather({
+    const result = await getWeatherResponse({
       latitude,
       longitude,
       timezone,
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return Response.json(
       {
-        error: "Unable to load weather.",
+        error: "Weather data is temporarily unavailable.",
         details: error instanceof Error ? error.message : "unknown-error",
       },
       { status: 500 },

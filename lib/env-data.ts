@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Chore, FamilyMember, MealPlanItem, Weather } from "@/types";
+import type { Chore, FamilyMember, MealPlanItem } from "@/types";
 
 function parseJsonEnv<T>(value: string | undefined, fallback: T): T {
   if (!value?.trim()) return fallback;
@@ -31,16 +31,6 @@ function initialsFor(name: string) {
     .slice(0, 2)
     .toUpperCase();
 }
-
-const defaultWeather: Weather = {
-  location: process.env.NEXT_PUBLIC_HOME_LOCATION_LABEL ?? "Home",
-  temperature: 0,
-  high: 0,
-  low: 0,
-  condition: "Not configured",
-  icon: "cloud-off",
-  source: "api",
-};
 
 export function getEnvFamilyMembers(): FamilyMember[] {
   const members = parseJsonEnv<Partial<FamilyMember>[]>(
@@ -114,24 +104,4 @@ export function getEnvMealPlan(): MealPlanItem[] {
     });
 
   return normalizedMeals.filter((meal): meal is MealPlanItem => Boolean(meal));
-}
-
-export function getEnvWeather(): Weather {
-  const weather = parseJsonEnv<Partial<Weather>>(
-    process.env.WEATHER_JSON,
-    defaultWeather,
-  );
-
-  return {
-    location: sanitizeString(weather.location) || defaultWeather.location,
-    temperature:
-      typeof weather.temperature === "number"
-        ? weather.temperature
-        : defaultWeather.temperature,
-    high: typeof weather.high === "number" ? weather.high : defaultWeather.high,
-    low: typeof weather.low === "number" ? weather.low : defaultWeather.low,
-    condition: sanitizeString(weather.condition) || defaultWeather.condition,
-    icon: sanitizeString(weather.icon) || defaultWeather.icon,
-    source: weather.source === "mock" ? "api" : "api",
-  };
 }

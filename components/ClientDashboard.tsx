@@ -31,12 +31,17 @@ import {
   X,
 } from "lucide-react";
 import { appConfig } from "@/lib/config";
-import { useBrowserWeather } from "@/hooks/useBrowserWeather";
+import DailyForecast from "@/components/weather/DailyForecast";
+import HourlyForecast from "@/components/weather/HourlyForecast";
+import WeatherAlerts from "@/components/weather/WeatherAlerts";
+import WeatherCard from "@/components/weather/WeatherCard";
 import { useHubDirectory } from "@/hooks/useHubDirectory";
 import {
   useRoutineTasks,
   type RoutineTask,
 } from "@/hooks/useRoutineTasks";
+import { useWeather } from "@/hooks/useWeather";
+import type { ForecastPeriod } from "@/lib/weather/types";
 import {
   addDays,
   formatDateLabel,
@@ -53,7 +58,6 @@ import type {
   FamilyMember,
   HubMemberRecord,
   Weather,
-  WeatherApiDaily,
 } from "@/types";
 import Screensaver from "./Screensaver";
 import GoogleCalendarSync from "./GoogleCalendarSync";
@@ -244,7 +248,7 @@ function getMonthDays(date: Date) {
 function getForecastForDate(
   date: Date,
   weather: Weather,
-  dailyForecast: WeatherApiDaily[],
+  dailyForecast: ForecastPeriod[],
   todayKey: string,
 ): DailyWeather {
   const dateKey = toDateKey(date, appConfig.timezone);
@@ -318,7 +322,7 @@ export default function ClientDashboard({
   currentUserRole,
 }: Props) {
   const now = useClock(data.lastUpdated);
-  const browserWeather = useBrowserWeather(data.weather);
+  const browserWeather = useWeather(data.weather);
   const activeWeather = browserWeather.weather;
   const todayKey = toDateKey(now, appConfig.timezone);
   const defaultTasks = useMemo(() => toRoutineTasks(data.chores), [data.chores]);
@@ -539,7 +543,7 @@ export default function ClientDashboard({
       : browserWeather.status === "home"
         ? "Using home weather..."
         : browserWeather.status === "unavailable"
-          ? "Weather unavailable"
+          ? "Weather data is temporarily unavailable."
           : `${activeWeather.temperature}° ${activeWeather.condition}`;
   const todaysEvents = sortedEvents.filter(
     (event) => toDateKey(new Date(event.start), appConfig.timezone) === todayKey,
@@ -1236,6 +1240,26 @@ export default function ClientDashboard({
             <GoogleCalendarSync
               currentUserName={currentUser.name ?? currentUser.email}
             />
+
+            <div className="weather-dashboard">
+              <WeatherAlerts
+                alerts={browserWeather.alerts}
+                onDismiss={browserWeather.dismissAlert}
+              />
+              <WeatherCard
+                weather={browserWeather.forecast}
+                message={browserWeather.message || "Loading weather..."}
+              />
+              {browserWeather.forecast ? (
+                <div className="weather-detail-grid">
+                  <HourlyForecast
+                    hourly={browserWeather.hourly}
+                    timezone={browserWeather.forecast.location.timezone}
+                  />
+                  <DailyForecast daily={browserWeather.daily} />
+                </div>
+              ) : null}
+            </div>
 
             <div className="seven-day-grid">
               {nextSevenDays.map((day, index) => {
