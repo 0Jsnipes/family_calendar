@@ -3,6 +3,8 @@ export const appConfig = {
   timezone: process.env.NEXT_PUBLIC_HOME_TIMEZONE ?? "America/New_York",
   locationLabel:
     process.env.NEXT_PUBLIC_HOME_LOCATION_LABEL ?? "Myrtle Beach, SC",
+  homeLatitude: Number(process.env.NEXT_PUBLIC_HOME_LAT ?? "33.6891"),
+  homeLongitude: Number(process.env.NEXT_PUBLIC_HOME_LON ?? "-78.8867"),
   kioskMode: process.env.NEXT_PUBLIC_KIOSK_MODE !== "false",
   enableVoice: process.env.NEXT_PUBLIC_ENABLE_VOICE === "true",
   enableChores: process.env.NEXT_PUBLIC_ENABLE_CHORES !== "false",

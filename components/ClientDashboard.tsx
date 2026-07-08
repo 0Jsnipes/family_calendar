@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { appConfig } from "@/lib/config";
+import { useBrowserWeather } from "@/hooks/useBrowserWeather";
 import { useHubDirectory } from "@/hooks/useHubDirectory";
 import {
   useRoutineTasks,
@@ -52,6 +53,7 @@ import type {
   FamilyMember,
   HubMemberRecord,
   Weather,
+  WeatherApiDaily,
 } from "@/types";
 import Screensaver from "./Screensaver";
 import GoogleCalendarSync from "./GoogleCalendarSync";
@@ -238,7 +240,21 @@ function getMonthDays(date: Date) {
   return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
 }
 
-function getForecastForDate(date: Date, weather: Weather): DailyWeather {
+function getForecastForDate(
+  date: Date,
+  weather: Weather,
+  dailyForecast: WeatherApiDaily[],
+): DailyWeather {
+  const dateKey = toDateKey(date, appConfig.timezone);
+  const matchingForecast = dailyForecast.find((entry) => entry.date === dateKey);
+
+  if (matchingForecast) {
+    return {
+      label: matchingForecast.summary,
+      temp: matchingForecast.high,
+    };
+  }
+
   const conditions = [
     "Sunny",
     "Partly sunny",
@@ -290,6 +306,8 @@ export default function ClientDashboard({
   currentUserRole,
 }: Props) {
   const now = useClock(data.lastUpdated);
+  const browserWeather = useBrowserWeather(data.weather);
+  const activeWeather = browserWeather.weather;
   const todayKey = toDateKey(now, appConfig.timezone);
   const defaultTasks = useMemo(() => toRoutineTasks(data.chores), [data.chores]);
   const defaultSettings = useMemo<HubSettings>(
@@ -430,16 +448,6 @@ export default function ClientDashboard({
   }, [hasLoadedNotes, notes]);
 
   useEffect(() => {
-    setCalendarEvents(data.events);
-  }, [data.events]);
-
-  useEffect(() => {
-    if (!isEventComposerOpen) return;
-    setEventComposer(getDefaultEventComposerState(selectedDate));
-    setEventError(null);
-  }, [isEventComposerOpen, selectedDate]);
-
-  useEffect(() => {
     if (settings.idleMinutes === 0) {
       return;
     }
@@ -512,6 +520,14 @@ export default function ClientDashboard({
     [calendarEvents],
   );
   const selectedDateKey = toDateKey(selectedDate, appConfig.timezone);
+  const weatherBadgeText =
+    browserWeather.status === "loading"
+      ? "Loading weather..."
+      : browserWeather.status === "home"
+        ? "Using home weather..."
+        : browserWeather.status === "unavailable"
+          ? "Weather unavailable"
+          : `${activeWeather.temperature}° ${activeWeather.condition}`;
   const todaysEvents = sortedEvents.filter(
     (event) => toDateKey(new Date(event.start), appConfig.timezone) === todayKey,
   );
@@ -748,7 +764,7 @@ export default function ClientDashboard({
         now={now}
         timeZone={appConfig.timezone}
         nextEventTitle={upcomingEvents[0]?.title}
-        weather={data.weather}
+        weather={activeWeather}
       />
     );
   }
@@ -779,7 +795,7 @@ export default function ClientDashboard({
           {settings.showWeather ? (
             <span>
               <CloudSun size={18} />
-              {data.weather.temperature}° {data.weather.condition}
+              {weatherBadgeText}
             </span>
           ) : null}
           <span
@@ -942,7 +958,11 @@ export default function ClientDashboard({
                     (event) =>
                       toDateKey(new Date(event.start), appConfig.timezone) === key,
                   );
-                  const forecast = getForecastForDate(day, data.weather);
+                  const forecast = getForecastForDate(
+                    day,
+                    activeWeather,
+                    browserWeather.daily,
+                  );
                   const isSelected = selectedDateKey === key;
                   const isToday = todayKey === key;
                   const isCurrentMonth =

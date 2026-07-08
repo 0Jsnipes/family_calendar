@@ -45,6 +45,79 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.legal-links {
+  position: fixed;
+  inset: auto 0 10px;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+  color: rgba(23, 32, 51, 0.62);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.legal-links a,
+.legal-links span {
+  pointer-events: auto;
+}
+
+.legal-links a:hover {
+  color: var(--fg);
+}
+
+.legal-page-shell {
+  min-height: 100dvh;
+  overflow-y: auto;
+  padding: 28px 20px 72px;
+  display: grid;
+  place-items: start center;
+}
+
+.legal-page-card {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  padding: clamp(24px, 4vw, 40px);
+  background: rgba(255, 250, 242, 0.92);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px);
+}
+
+.legal-page-card h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.legal-page-card h2 {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.legal-page-card p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.legal-page-card section {
+  display: grid;
+  gap: 6px;
+}
+
+.legal-back-link {
+  width: fit-content;
+}
+
 .sign-in-shell {
   min-height: 100dvh;
   display: grid;
@@ -1957,6 +2030,11 @@ html[data-reduce-motion="true"] *::after {
   html,
   body {
     overflow: auto;
+  }
+
+  .legal-links {
+    inset: auto 0 8px;
+    font-size: 0.63rem;
   }
 
   .hub-shell {

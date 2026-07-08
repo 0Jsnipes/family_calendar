@@ -70,6 +70,45 @@ export type Weather = {
   source: "mock" | "api";
 };
 
+export type WeatherApiCurrent = {
+  temperature: number;
+  humidity: number;
+  apparentTemperature: number;
+  isDay: boolean;
+  precipitation: number;
+  rain: number;
+  showers: number;
+  weatherCode: number;
+  summary: string;
+  cloudCover: number;
+  windSpeed: number;
+};
+
+export type WeatherApiDaily = {
+  date: string;
+  weatherCode: number;
+  summary: string;
+  high: number;
+  low: number;
+  precipitationProbabilityMax: number;
+};
+
+export type WeatherApiResponse = {
+  provider: "open-meteo";
+  location: {
+    label: string;
+    timezone: string;
+  };
+  coordinates: {
+    latitude: number;
+    longitude: number;
+  };
+  current: WeatherApiCurrent;
+  daily: WeatherApiDaily[];
+  fallbackUsed: boolean;
+  source: "browser" | "home" | "default";
+};
+
 export type MealPlanItem = {
   id: string;
   meal: "breakfast" | "lunch" | "dinner";

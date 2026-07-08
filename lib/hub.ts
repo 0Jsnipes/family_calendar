@@ -54,6 +54,46 @@ function timestampToIso(value: unknown) {
   return value instanceof Timestamp ? value.toDate().toISOString() : null;
 }
 
+function buildInviteEmailHtml(inviteUrl: string) {
+  const appUrl = serverConfig.appUrl.replace(/\/$/, "");
+  const inviteImageUrl = `${appUrl}/family-hub-invite.png`;
+
+  return `
+    <div style="margin:0;padding:24px;background:#f5efe5;font-family:Segoe UI,Arial,sans-serif;color:#172033;">
+      <div style="max-width:720px;margin:0 auto;background:#fffaf2;border:1px solid rgba(23,32,51,0.08);border-radius:24px;padding:24px;">
+        <a href="${inviteUrl}" style="display:block;text-decoration:none;">
+          <img
+            src="${inviteImageUrl}"
+            alt="You're invited to Family Hub"
+            style="display:block;width:100%;max-width:672px;height:auto;border:0;border-radius:18px;"
+          />
+        </a>
+        <div style="padding-top:20px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:#667085;">
+            Family Hub Invite
+          </p>
+          <h1 style="margin:0 0 12px;font-size:32px;line-height:1.05;color:#172033;">
+            Join your shared family dashboard
+          </h1>
+          <p style="margin:0 0 20px;font-size:16px;line-height:1.6;color:#475467;">
+            You were invited to join Family Hub. Open the link below to accept the invite and connect to the shared calendar, routines, and home display.
+          </p>
+          <a
+            href="${inviteUrl}"
+            style="display:inline-block;padding:14px 20px;border-radius:14px;background:#172033;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;"
+          >
+            Join Family Hub
+          </a>
+          <p style="margin:18px 0 0;font-size:13px;line-height:1.6;color:#667085;">
+            If the button does not work, copy and paste this link into your browser:<br />
+            <a href="${inviteUrl}" style="color:#2563eb;text-decoration:none;">${inviteUrl}</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function mapHubMember(docId: string, data: Partial<HubMemberRecord>): HubMemberRecord {
   return {
     id: docId,
@@ -252,7 +292,7 @@ export async function createHubInvite(input: {
   await queueTransactionalEmail({
     to: [email],
     subject: "You're invited to Family Hub",
-    html: `<p>You were invited to join Family Hub.</p><p><a href="${inviteUrl}">Accept your invite</a></p>`,
+    html: buildInviteEmailHtml(inviteUrl),
   });
 
   return inviteRef.id;
