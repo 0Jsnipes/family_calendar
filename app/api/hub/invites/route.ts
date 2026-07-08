@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHubInvite, listPendingHubInvites } from "@/lib/hub";
+import { createHubInvite, listPendingHubInvites, revokeHubInvite } from "@/lib/hub";
 import { requireHubManager } from "@/lib/hubAuth";
 
 export async function GET() {
@@ -37,5 +37,29 @@ export async function POST(request: Request) {
     const status =
       error instanceof Error && error.message === "hub-manager-required" ? 403 : 401;
     return NextResponse.json({ error: "Unable to create invite." }, { status });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    await requireHubManager();
+    const body = (await request.json()) as {
+      inviteId?: string;
+    };
+
+    if (!body.inviteId?.trim()) {
+      return NextResponse.json({ error: "Invite ID is required." }, { status: 400 });
+    }
+
+    await revokeHubInvite(body.inviteId.trim());
+    return NextResponse.json({ invites: await listPendingHubInvites() });
+  } catch (error) {
+    const status =
+      error instanceof Error && error.message === "invite-not-found"
+        ? 404
+        : error instanceof Error && error.message === "hub-manager-required"
+          ? 403
+          : 401;
+    return NextResponse.json({ error: "Unable to revoke invite." }, { status });
   }
 }

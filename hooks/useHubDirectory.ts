@@ -144,6 +144,23 @@ export function useHubDirectory() {
     setInvites(payload.invites ?? []);
   }
 
+  async function revokeInvite(inviteId: string) {
+    if (!firebaseUser) throw new Error("You must be signed in.");
+    const response = await fetch("/api/hub/invites", {
+      method: "DELETE",
+      headers: await getAuthHeaders(firebaseUser),
+      body: JSON.stringify({ inviteId }),
+    });
+    const payload = (await response.json()) as {
+      invites?: HubInviteRecord[];
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Unable to revoke invite.");
+    }
+    setInvites(payload.invites ?? []);
+  }
+
   return {
     firebaseUser,
     members,
@@ -153,5 +170,6 @@ export function useHubDirectory() {
     addLocalMember,
     removeMember,
     inviteMember,
+    revokeInvite,
   };
 }

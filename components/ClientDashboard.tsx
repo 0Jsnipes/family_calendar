@@ -88,6 +88,7 @@ type CalendarMode = "week" | "month";
 type DailyWeather = {
   label: string;
   temp: number;
+  unitLabel?: string;
 };
 
 type FamilyNote = {
@@ -244,14 +245,24 @@ function getForecastForDate(
   date: Date,
   weather: Weather,
   dailyForecast: WeatherApiDaily[],
+  todayKey: string,
 ): DailyWeather {
   const dateKey = toDateKey(date, appConfig.timezone);
+  if (dateKey === todayKey) {
+    return {
+      label: weather.condition,
+      temp: weather.temperature,
+      unitLabel: "Now",
+    };
+  }
+
   const matchingForecast = dailyForecast.find((entry) => entry.date === dateKey);
 
   if (matchingForecast) {
     return {
       label: matchingForecast.summary,
       temp: matchingForecast.high,
+      unitLabel: "Hi",
     };
   }
 
@@ -269,6 +280,7 @@ function getForecastForDate(
   return {
     label: conditions[seed % conditions.length],
     temp: Math.round(baseTemp + variation),
+    unitLabel: "Hi",
   };
 }
 
@@ -362,6 +374,7 @@ export default function ClientDashboard({
     addLocalMember,
     removeMember,
     inviteMember,
+    revokeInvite,
   } = useHubDirectory();
   const allMembers = useMemo(() => {
     if (!hubMembers.length) return data.familyMembers;
@@ -758,6 +771,24 @@ export default function ClientDashboard({
     }
   }
 
+  async function handleRevokeInvite(inviteId: string) {
+    if (!canManageMembers) return;
+    setAccountPending(true);
+    setAccountError(null);
+
+    try {
+      await revokeInvite(inviteId);
+    } catch (caughtError) {
+      setAccountError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to revoke invite.",
+      );
+    } finally {
+      setAccountPending(false);
+    }
+  }
+
   if (isAsleep) {
     return (
       <Screensaver
@@ -962,6 +993,7 @@ export default function ClientDashboard({
                     day,
                     activeWeather,
                     browserWeather.daily,
+                    todayKey,
                   );
                   const isSelected = selectedDateKey === key;
                   const isToday = todayKey === key;
@@ -1011,6 +1043,7 @@ export default function ClientDashboard({
                         <>
                           <span className="day-weather" title={forecast.label}>
                             <CloudSun size={17} />
+                            {forecast.unitLabel ? `${forecast.unitLabel} ` : ""}
                             {forecast.temp}°
                           </span>
                           <span className="event-count-copy">
@@ -1489,6 +1522,15 @@ export default function ClientDashboard({
                             <small>{invite.role}</small>
                             <small>Invite pending</small>
                           </div>
+                          <button
+                            type="button"
+                            className="account-remove-button"
+                            onClick={() => void handleRevokeInvite(invite.id)}
+                            disabled={!canManageMembers || accountPending}
+                            aria-label={`Revoke invite for ${invite.email}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       ))}
                     </div>

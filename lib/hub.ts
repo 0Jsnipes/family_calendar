@@ -298,6 +298,25 @@ export async function createHubInvite(input: {
   return inviteRef.id;
 }
 
+export async function revokeHubInvite(inviteId: string) {
+  if (!isFirebaseAdminConfigured()) {
+    throw new Error("firebase-admin-not-configured");
+  }
+
+  const inviteDoc = await invitesRef().doc(inviteId).get();
+  if (!inviteDoc.exists) {
+    throw new Error("invite-not-found");
+  }
+
+  await inviteDoc.ref.set(
+    {
+      status: "revoked",
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export async function addLocalHubMember(input: {
   name: string;
   role: HubMemberRole;
