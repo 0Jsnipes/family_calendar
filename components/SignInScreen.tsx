@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LogIn, ShieldCheck } from "lucide-react";
 import { signOut, type UserCredential } from "firebase/auth";
@@ -9,11 +10,13 @@ import {
   isFirebaseClientConfigured,
 } from "@/lib/firebase/client";
 import {
-  KIOSK_BLOCKED_MESSAGE,
   isLikelyRestrictedWebView,
   resolveGoogleRedirectResult,
   signInWithGoogleSmart,
 } from "@/lib/firebase/googleAuth";
+
+const RESTRICTED_WEBVIEW_MESSAGE =
+  "Google sign-in isn't available in this browser. If this is a kiosk or wall display, open /kiosk instead and sign in with the kiosk email and password.";
 
 export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +140,10 @@ export default function SignInScreen() {
         </button>
         {error ? <p className="sign-in-error">{error}</p> : null}
         {showKioskNotice ? (
-          <p className="sign-in-notice">{KIOSK_BLOCKED_MESSAGE}</p>
+          <p className="sign-in-notice">
+            {RESTRICTED_WEBVIEW_MESSAGE}{" "}
+            <Link href="/kiosk">Go to kiosk sign-in</Link>
+          </p>
         ) : null}
       </section>
     </main>

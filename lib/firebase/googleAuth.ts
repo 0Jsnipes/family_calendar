@@ -10,15 +10,16 @@ import {
 } from "firebase/auth";
 
 /**
- * signInWithPopup opens a second browser window/tab, which Android/iOS
- * kiosk shells, installed PWAs (standalone display mode), and in-app
- * webviews frequently cannot spawn — the popup gets silently blocked, is
- * closed by the host shell before the OAuth flow finishes, or Firebase
- * itself refuses with "operation-not-supported-in-this-environment"
- * because there is no separate chrome to host it in. signInWithRedirect
- * instead navigates the same window through Google's consent screen and
- * back, which works in all of those shells, so we use it there and reserve
- * the popup (no full-page reload/back-button hop) for normal desktop tabs.
+ * signInWithPopup is the default for every environment: it never leaves
+ * this page, so there is no round trip through Firebase's hosted
+ * /__/auth/handler page and no dependence on sessionStorage surviving a
+ * full-page navigation (the redirect flow's well-known failure mode on
+ * Android Chrome/PWA — "missing initial state"). We only fall back to
+ * signInWithRedirect when the popup itself couldn't run: it was blocked,
+ * closed before completing, or the environment doesn't support popups at
+ * all. Kiosk shells (Fully Kiosk Browser, in-app webviews) should not use
+ * Google sign-in through this path either way — see /kiosk, which uses
+ * email/password instead.
  */
 
 export const KIOSK_BLOCKED_MESSAGE =
@@ -54,31 +55,6 @@ function toDisplayError(error: unknown): Error {
   return error instanceof Error ? error : new Error("Unable to sign in with Google.");
 }
 
-export function isStandalonePwa(): boolean {
-  if (typeof window === "undefined") return false;
-
-  const iosStandalone = (window.navigator as Navigator & { standalone?: boolean })
-    .standalone;
-
-  return (
-    window.matchMedia?.("(display-mode: standalone)").matches === true ||
-    iosStandalone === true
-  );
-}
-
-export function isMobileOrTabletDevice(): boolean {
-  if (typeof window === "undefined") return false;
-
-  const userAgent = window.navigator.userAgent || "";
-  const touchPoints = window.navigator.maxTouchPoints ?? 0;
-  const uaLooksMobile = /Android|iPhone|iPad|iPod|Mobile|Tablet|Silk/i.test(userAgent);
-  // iPadOS 13+ identifies as "Macintosh" but exposes multi-touch, unlike a
-  // real Mac trackpad/mouse.
-  const isTouchMac = /Macintosh/i.test(userAgent) && touchPoints > 1;
-
-  return uaLooksMobile || isTouchMac || touchPoints > 1;
-}
-
 /**
  * Heuristic for Android system WebViews and in-app browsers (kiosk shells,
  * Facebook/Instagram/Line, etc.) that Google's own OAuth consent screen
@@ -93,27 +69,20 @@ export function isLikelyRestrictedWebView(): boolean {
   return /; ?wv\)|FBAN|FBAV|Instagram|Line\/|MicroMessenger|Kiosk/i.test(userAgent);
 }
 
-export function shouldUseRedirectForGoogleSignIn(): boolean {
-  return isStandalonePwa() || isMobileOrTabletDevice() || isLikelyRestrictedWebView();
-}
-
 /** Result of a sign-in attempt: either a completed credential, or the
  * browser is about to navigate away for the redirect flow. */
 export type GoogleSignInResult = UserCredential | "redirect-pending";
 
+/**
+ * Always tries the popup first, in every environment. Only falls back to
+ * signInWithRedirect when the popup itself failed for an environment
+ * reason (blocked, closed early, or unsupported) — never as a default
+ * choice based on device/browser sniffing.
+ */
 export async function signInWithGoogleSmart(
   auth: Auth,
   provider: AuthProvider,
 ): Promise<GoogleSignInResult> {
-  if (shouldUseRedirectForGoogleSignIn()) {
-    try {
-      await signInWithRedirect(auth, provider);
-      return "redirect-pending";
-    } catch (error) {
-      throw toDisplayError(error);
-    }
-  }
-
   try {
     return await signInWithPopup(auth, provider);
   } catch (error) {
@@ -131,12 +100,19 @@ export async function signInWithGoogleSmart(
 }
 
 /** Call once on app load to finish a signInWithRedirect flow that navigated
- * back to this page. Resolves to null when there was no pending redirect. */
+ * back to this page. Resolves to null when there was no pending redirect.
+ * Races against a short timeout so a hung/broken redirect check (e.g. the
+ * "missing initial state" sessionStorage failure) can never leave the app
+ * stuck showing "Checking sign-in...". */
 export async function resolveGoogleRedirectResult(
   auth: Auth,
 ): Promise<UserCredential | null> {
   try {
-    return await getRedirectResult(auth);
+    const result = await Promise.race([
+      getRedirectResult(auth),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+    ]);
+    return result;
   } catch (error) {
     throw toDisplayError(error);
   }

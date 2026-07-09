@@ -244,7 +244,7 @@ export async function listPendingHubInvites() {
 }
 
 export function canManageHub(role?: HubMemberRole | null) {
-  return role === "owner" || role === "admin";
+  return role === "owner" || role === "admin" || role === "kiosk";
 }
 
 export function toFamilyMember(member: HubMemberRecord): FamilyMember {

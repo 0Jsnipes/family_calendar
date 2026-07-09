@@ -45,6 +45,8 @@ import {
   type RoutineTask,
 } from "@/hooks/useRoutineTasks";
 import { useWeather } from "@/hooks/useWeather";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useKioskAutoRefresh } from "@/hooks/useKioskAutoRefresh";
 import type { ForecastPeriod } from "@/lib/weather/types";
 import {
   addDays,
@@ -61,6 +63,7 @@ import type {
   DisplayView,
   FamilyMember,
   HubMemberRecord,
+  HubMemberRole,
   Weather,
 } from "@/types";
 import Screensaver from "./Screensaver";
@@ -88,7 +91,7 @@ type Props = {
   initialView: DisplayView;
   kioskMode: boolean;
   currentUser: AuthenticatedUser;
-  currentUserRole: "owner" | "admin" | "member" | "child" | "local";
+  currentUserRole: HubMemberRole;
 };
 
 type CalendarMode = "week" | "month";
@@ -414,9 +417,13 @@ export default function ClientDashboard({
   }, [data.familyMembers, hubMembers]);
   const familyOwner = ownerFor(allMembers, "family");
   const canManageMembers =
-    currentUserRole === "owner" || currentUserRole === "admin";
+    currentUserRole === "owner" ||
+    currentUserRole === "admin" ||
+    currentUserRole === "kiosk";
   const { tasks, loading: tasksLoading, error: tasksError, addTask, toggleTask, deleteTask, resetTasks } =
     useRoutineTasks(todayKey, defaultTasks);
+  const isOnline = useOnlineStatus();
+  useKioskAutoRefresh(kioskMode, isOnline);
 
   useEffect(() => {
     const loadSettings = window.setTimeout(() => {
@@ -919,6 +926,12 @@ export default function ClientDashboard({
 
   return (
     <main className="hub-shell">
+      {kioskMode && !isOnline ? (
+        <div className="kiosk-reconnect-banner" role="status" aria-live="assertive">
+          <WifiOff size={16} />
+          Reconnecting... waiting for network
+        </div>
+      ) : null}
       <header className="hub-topbar">
         <div className="brand-lockup">
           <div className="brand-icon">

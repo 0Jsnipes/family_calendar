@@ -97,7 +97,7 @@ export type AuthenticatedUser = {
   picture?: string;
 };
 
-export type HubMemberRole = "owner" | "admin" | "member" | "child" | "local";
+export type HubMemberRole = "owner" | "admin" | "member" | "child" | "local" | "kiosk";
 
 export type HubMemberRecord = {
   id: string;
