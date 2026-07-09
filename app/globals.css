@@ -1688,7 +1688,10 @@ p {
 }
 
 .settings-card.account-card {
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .settings-card-heading {
