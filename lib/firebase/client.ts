@@ -70,6 +70,8 @@ export let firebaseAnalytics: Analytics | null = null;
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
 if (typeof window !== "undefined" && isFirebaseClientConfigured()) {
+  // Persist sign-in across reloads/relaunches, including the full-page
+  // reload that signInWithRedirect performs (see lib/firebase/googleAuth.ts).
   void setPersistence(getFirebaseAuth(), browserLocalPersistence);
 
   if (firebaseConfig.measurementId) {
@@ -78,5 +80,19 @@ if (typeof window !== "undefined" && isFirebaseClientConfigured()) {
         firebaseAnalytics = getAnalytics(getFirebaseApp());
       }
     });
+  }
+
+  // Google sign-in (popup and redirect) only succeeds from an origin listed
+  // under Firebase Console > Authentication > Settings > Authorized domains.
+  // This app needs, at minimum:
+  //   - localhost                     (local dev)
+  //   - <project>.vercel.app          (current Vercel deployment domain)
+  //   - the production custom domain, if one is mapped to this project
+  // Log the current hostname in dev so it's easy to cross-check against
+  // that list when redirect sign-in fails with auth/unauthorized-domain.
+  if (process.env.NODE_ENV !== "production") {
+    console.info(
+      `[firebase-auth] hostname "${window.location.hostname}" must be listed in Firebase Console > Authentication > Settings > Authorized domains for Google sign-in to work.`,
+    );
   }
 }
