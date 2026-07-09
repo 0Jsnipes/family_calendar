@@ -248,6 +248,7 @@ p {
   height: 100dvh;
   min-height: 660px;
   padding: clamp(10px, 1.2vw, 20px);
+  padding-bottom: calc(clamp(10px, 1.2vw, 20px) + 30px);
   display: flex;
   flex-direction: column;
   gap: clamp(8px, 0.85vw, 13px);
@@ -1004,6 +1005,12 @@ p {
   gap: 16px;
 }
 
+.full-page-panel.coming-panel {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 .page-subtitle {
   margin-top: 6px;
   color: var(--muted);
@@ -1022,35 +1029,39 @@ p {
   color: var(--accent);
 }
 
-.google-calendar-card {
-  display: grid;
-  gap: 14px;
-  border: 1px solid rgba(23, 32, 51, 0.08);
-  border-radius: 22px;
-  padding: clamp(14px, 1.4vw, 18px);
-  background: rgba(255, 255, 255, 0.58);
-}
-
-.google-calendar-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.google-calendar-header h3 {
-  margin-top: 4px;
-  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
-  line-height: 1;
-  letter-spacing: -0.03em;
-}
-
-.google-calendar-actions {
+.google-calendar-bar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   flex-wrap: wrap;
+  gap: 10px;
+}
+
+.google-calendar-bar .provider-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.64);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.google-calendar-bar .provider-status.good {
+  color: var(--good);
+}
+
+.google-calendar-bar .provider-status.warn {
+  color: var(--warn);
+}
+
+.google-calendar-bar-error {
+  color: var(--danger);
+  font-size: 0.72rem;
+  font-weight: 750;
 }
 
 .secondary-button {
@@ -1065,39 +1076,6 @@ p {
   background: rgba(255, 255, 255, 0.84);
   color: var(--fg);
   font-weight: 900;
-}
-
-.google-calendar-meta {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.google-calendar-events {
-  display: grid;
-  gap: 8px;
-}
-
-.google-calendar-event {
-  min-width: 0;
-  border: 1px solid var(--panel-border);
-  border-left: 4px solid var(--accent);
-  border-radius: 14px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.8);
-}
-
-.google-calendar-event strong {
-  display: block;
-  font-size: 0.85rem;
-}
-
-.google-calendar-event p,
-.google-calendar-event small {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 750;
 }
 
 .weather-dashboard {
@@ -1452,6 +1430,74 @@ p {
   color: rgba(102, 112, 133, 0.72);
 }
 
+.note-mode-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.note-mode-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.note-mode-toggle button.active {
+  background: var(--accent-dark);
+  color: white;
+}
+
+.note-canvas-wrap {
+  position: relative;
+  min-height: 150px;
+  flex: 1 1 auto;
+}
+
+.note-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 150px;
+  display: block;
+  border: 1px solid var(--panel-border);
+  border-radius: 17px;
+  touch-action: none;
+}
+
+.note-canvas-clear {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--fg);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.note-canvas-clear:disabled {
+  opacity: 0.5;
+}
+
+.primary-button:disabled {
+  opacity: 0.5;
+}
+
 .note-color-row {
   display: flex;
   gap: 8px;
@@ -1514,6 +1560,14 @@ p {
   font-weight: 750;
   line-height: 1.4;
   white-space: pre-wrap;
+}
+
+.sticky-note-drawing {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  object-fit: contain;
+  border-radius: 10px;
 }
 
 .sticky-note > div {
@@ -1584,6 +1638,10 @@ p {
   border-radius: 20px;
   padding: clamp(12px, 1.25vw, 17px);
   background: rgba(255, 255, 255, 0.58);
+}
+
+.settings-card.account-card {
+  overflow: hidden;
 }
 
 .settings-card-heading {
@@ -1684,6 +1742,11 @@ p {
 .household-account-list {
   display: grid;
   gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 4px;
 }
 
 .household-account-row {
@@ -2258,6 +2321,7 @@ html[data-reduce-motion="true"] *::after {
   .hub-shell {
     min-height: 100dvh;
     padding: 8px;
+    padding-bottom: 34px;
   }
 
   .hub-topbar {

@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -17,13 +18,16 @@ import {
   Circle,
   Clock3,
   CloudSun,
+  Eraser,
   Home,
   LogIn,
   Palette,
+  Pencil,
   Plus,
   Settings2,
   StickyNote,
   Trash2,
+  Type,
   UserPlus,
   Users,
   Wifi,
@@ -100,6 +104,7 @@ type FamilyNote = {
   text: string;
   color: string;
   createdAt: string;
+  drawing?: string;
 };
 
 type EventComposerState = {
@@ -353,6 +358,11 @@ export default function ClientDashboard({
   const [hasLoadedNotes, setHasLoadedNotes] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteColor, setNoteColor] = useState(NOTE_COLORS[0]);
+  const [noteMode, setNoteMode] = useState<"write" | "draw">("write");
+  const [hasDrawing, setHasDrawing] = useState(false);
+  const noteCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const lastDrawPointRef = useRef<{ x: number; y: number } | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(data.events);
   const [isEventComposerOpen, setIsEventComposerOpen] = useState(false);
   const [eventComposer, setEventComposer] = useState<EventComposerState>(() =>
@@ -463,6 +473,21 @@ export default function ClientDashboard({
     if (!hasLoadedNotes) return;
     window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
   }, [hasLoadedNotes, notes]);
+
+  useEffect(() => {
+    if (noteMode !== "draw") return;
+    const canvas = noteCanvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+
+    const ctx = canvas.getContext("2d");
+    ctx?.scale(dpr, dpr);
+    setHasDrawing(false);
+  }, [noteMode]);
 
   useEffect(() => {
     if (settings.idleMinutes === 0) {
@@ -618,6 +643,25 @@ export default function ClientDashboard({
 
   function handleAddNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (noteMode === "draw") {
+      const canvas = noteCanvasRef.current;
+      if (!canvas || !hasDrawing) return;
+
+      setNotes((currentNotes) => [
+        {
+          id: createId("note"),
+          text: "",
+          color: noteColor,
+          createdAt: new Date().toISOString(),
+          drawing: canvas.toDataURL("image/png"),
+        },
+        ...currentNotes,
+      ]);
+      clearNoteCanvas();
+      return;
+    }
+
     const text = noteDraft.trim();
     if (!text) return;
 
@@ -631,6 +675,75 @@ export default function ClientDashboard({
       ...currentNotes,
     ]);
     setNoteDraft("");
+  }
+
+  function clearNoteCanvas() {
+    const canvas = noteCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setHasDrawing(false);
+  }
+
+  function getNoteCanvasPoint(
+    canvas: HTMLCanvasElement,
+    clientX: number,
+    clientY: number,
+  ) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function handleNoteCanvasPointerDown(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    const canvas = noteCanvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(event.pointerId);
+    isDrawingRef.current = true;
+    lastDrawPointRef.current = getNoteCanvasPoint(
+      canvas,
+      event.clientX,
+      event.clientY,
+    );
+  }
+
+  function handleNoteCanvasPointerMove(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    if (!isDrawingRef.current) return;
+    const canvas = noteCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+
+    const point = getNoteCanvasPoint(canvas, event.clientX, event.clientY);
+    const lastPoint = lastDrawPointRef.current;
+
+    if (lastPoint) {
+      ctx.strokeStyle = "#1f2933";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(lastPoint.x, lastPoint.y);
+      ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+    }
+
+    lastDrawPointRef.current = point;
+    setHasDrawing(true);
+  }
+
+  function handleNoteCanvasPointerUp(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    isDrawingRef.current = false;
+    lastDrawPointRef.current = null;
+    const canvas = noteCanvasRef.current;
+    if (canvas && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
   }
 
   function handleAddMember(event: FormEvent<HTMLFormElement>) {
@@ -1347,15 +1460,62 @@ export default function ClientDashboard({
 
             <div className="notes-layout">
               <form className="note-composer" onSubmit={handleAddNote}>
-                <label htmlFor="family-note">New note</label>
-                <textarea
-                  id="family-note"
-                  value={noteDraft}
-                  onChange={(event) => setNoteDraft(event.target.value)}
-                  placeholder="Milk is low, practice moved to 6…"
-                  maxLength={180}
-                  style={{ backgroundColor: noteColor }}
-                />
+                <div className="note-mode-toggle" role="tablist" aria-label="Note input mode">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={noteMode === "write"}
+                    className={noteMode === "write" ? "active" : ""}
+                    onClick={() => setNoteMode("write")}
+                  >
+                    <Type size={16} /> Write
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={noteMode === "draw"}
+                    className={noteMode === "draw" ? "active" : ""}
+                    onClick={() => setNoteMode("draw")}
+                  >
+                    <Pencil size={16} /> Draw
+                  </button>
+                </div>
+
+                {noteMode === "write" ? (
+                  <>
+                    <label htmlFor="family-note">New note</label>
+                    <textarea
+                      id="family-note"
+                      value={noteDraft}
+                      onChange={(event) => setNoteDraft(event.target.value)}
+                      placeholder="Milk is low, practice moved to 6…"
+                      maxLength={180}
+                      style={{ backgroundColor: noteColor }}
+                    />
+                  </>
+                ) : (
+                  <div className="note-canvas-wrap">
+                    <canvas
+                      ref={noteCanvasRef}
+                      className="note-canvas"
+                      style={{ backgroundColor: noteColor }}
+                      onPointerDown={handleNoteCanvasPointerDown}
+                      onPointerMove={handleNoteCanvasPointerMove}
+                      onPointerUp={handleNoteCanvasPointerUp}
+                      onPointerLeave={handleNoteCanvasPointerUp}
+                      aria-label="Draw a note with your finger"
+                    />
+                    <button
+                      type="button"
+                      className="note-canvas-clear"
+                      onClick={clearNoteCanvas}
+                      disabled={!hasDrawing}
+                    >
+                      <Eraser size={16} /> Clear
+                    </button>
+                  </div>
+                )}
+
                 <div className="note-color-row" aria-label="Note color">
                   {NOTE_COLORS.map((color) => (
                     <button
@@ -1368,7 +1528,13 @@ export default function ClientDashboard({
                     />
                   ))}
                 </div>
-                <button type="submit" className="primary-button">
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={
+                    noteMode === "draw" ? !hasDrawing : !noteDraft.trim()
+                  }
+                >
                   <Plus size={18} /> Post note
                 </button>
               </form>
@@ -1381,7 +1547,15 @@ export default function ClientDashboard({
                       className="sticky-note"
                       style={{ backgroundColor: note.color }}
                     >
-                      <p>{note.text}</p>
+                      {note.drawing ? (
+                        <img
+                          src={note.drawing}
+                          alt="Handwritten family note"
+                          className="sticky-note-drawing"
+                        />
+                      ) : (
+                        <p>{note.text}</p>
+                      )}
                       <div>
                         <span>
                           {new Intl.DateTimeFormat("en-US", {

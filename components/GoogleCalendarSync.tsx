@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { CalendarSync, ExternalLink, RefreshCcw } from "lucide-react";
 import { onIdTokenChanged, type User } from "firebase/auth";
-import { appConfig } from "@/lib/config";
 import { getFirebaseAuth, isFirebaseClientConfigured } from "@/lib/firebase/client";
 import type { HubCalendarEvent } from "@/types";
 
@@ -21,28 +20,6 @@ async function getAuthorizationHeader(user: User) {
   return {
     Authorization: `Bearer ${await user.getIdToken()}`,
   };
-}
-
-function formatEventDate(value: string, allDay: boolean) {
-  const date = new Date(value);
-
-  if (allDay) {
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      weekday: "short",
-      timeZone: appConfig.timezone,
-    }).format(date);
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    weekday: "short",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: appConfig.timezone,
-  }).format(date);
 }
 
 export default function GoogleCalendarSync({ currentUserName }: Props) {
@@ -253,90 +230,45 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
     }
   }
 
+  const statusLabel = loadingStatus
+    ? "Checking Google Calendar..."
+    : status?.connected
+      ? `Google Calendar connected${events.length ? ` · ${events.length} upcoming` : ""}`
+      : "Google Calendar not connected";
+
   return (
-    <section className="google-calendar-card">
-      <div className="google-calendar-header">
-        <div>
-          <p className="eyebrow">Google Calendar</p>
-          <h3>Personal sync for {currentUserName}</h3>
-          <p className="page-subtitle">
-            Connect your Google Calendar after Firebase sign-in and show the next 14
-            days here on the hub.
-          </p>
-        </div>
-        <div className="page-icon">
-          <CalendarSync size={25} />
-        </div>
-      </div>
+    <div className="google-calendar-bar">
+      <span
+        className={`provider-status ${status?.connected ? "good" : "warn"}`}
+        title={`Personal sync for ${currentUserName}`}
+      >
+        <CalendarSync size={15} />
+        {statusLabel}
+      </span>
 
-      <div className="google-calendar-actions">
-        <span
-          className={`provider-status ${
-            status?.connected ? "good" : "warn"
-          }`}
+      {!status?.connected ? (
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void handleConnect()}
+          disabled={pendingConnect || loadingStatus || !firebaseUser}
         >
-          {loadingStatus
-            ? "Checking status..."
-            : status?.connected
-              ? "Google Calendar Connected"
-              : "Not connected"}
-        </span>
+          <ExternalLink size={16} />
+          {pendingConnect ? "Redirecting..." : "Connect Google Calendar"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void handleRefreshEvents()}
+          disabled={loadingEvents || !firebaseUser}
+        >
+          <RefreshCcw size={16} />
+          {loadingEvents ? "Refreshing..." : "Refresh events"}
+        </button>
+      )}
 
-        {!status?.connected ? (
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => void handleConnect()}
-            disabled={pendingConnect || loadingStatus || !firebaseUser}
-          >
-            <ExternalLink size={17} />
-            {pendingConnect ? "Redirecting..." : "Connect Google Calendar"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void handleRefreshEvents()}
-            disabled={loadingEvents || !firebaseUser}
-          >
-            <RefreshCcw size={17} />
-            {loadingEvents ? "Refreshing..." : "Refresh Events"}
-          </button>
-        )}
-      </div>
-
-      {status?.connected ? (
-        <p className="google-calendar-meta">
-          Calendars: {(status.calendarIds ?? ["primary"]).join(", ")}{" "}
-          {status.lastSyncAt
-            ? `· Last sync ${new Date(status.lastSyncAt).toLocaleString()}`
-            : "· Not synced yet"}
-        </p>
-      ) : null}
-
-      {error ? <p className="quiet-note">{error}</p> : null}
-
-      <div className="google-calendar-events">
-        {status?.connected && loadingEvents ? (
-          <p className="schedule-empty">Loading Google Calendar events...</p>
-        ) : status?.connected && events.length ? (
-          events.map((event) => (
-            <article key={event.id} className="google-calendar-event">
-              <div>
-                <strong>{event.title}</strong>
-                <p>{formatEventDate(event.start, event.allDay)}</p>
-                {event.location ? <small>{event.location}</small> : null}
-              </div>
-            </article>
-          ))
-        ) : status?.connected ? (
-          <p className="schedule-empty">No upcoming Google Calendar events.</p>
-        ) : (
-          <p className="schedule-empty">
-            Connect Google Calendar to show personal upcoming events on this hub.
-          </p>
-        )}
-      </div>
-    </section>
+      {error ? <span className="google-calendar-bar-error">{error}</span> : null}
+    </div>
   );
 }
