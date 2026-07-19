@@ -11,10 +11,77 @@ type Props = {
 };
 
 type CalendarStatus = {
+  success?: boolean;
   connected: boolean;
+  reconnectRequired?: boolean;
   calendarIds?: string[];
   lastSyncAt?: string | null;
 };
+
+type CalendarApiErrorCode =
+  | "GOOGLE_RECONNECT_REQUIRED"
+  | "GOOGLE_CALENDAR_RATE_LIMITED"
+  | "GOOGLE_CALENDAR_TEMPORARILY_UNAVAILABLE"
+  | "GOOGLE_CALENDAR_PERMISSION_DENIED"
+  | "GOOGLE_CALENDAR_FORBIDDEN"
+  | "UNAUTHENTICATED"
+  | "UNKNOWN";
+
+type CalendarApiError = {
+  success?: false;
+  code?: CalendarApiErrorCode;
+  message?: string;
+  error?: string;
+};
+
+class CalendarRequestError extends Error {
+  code: CalendarApiErrorCode;
+  status: number;
+
+  constructor(input: { code?: string; message: string; status: number }) {
+    super(input.message);
+    this.name = "CalendarRequestError";
+    this.code = isCalendarApiErrorCode(input.code) ? input.code : "UNKNOWN";
+    this.status = input.status;
+  }
+}
+
+function isCalendarApiErrorCode(code: string | undefined): code is CalendarApiErrorCode {
+  return (
+    code === "GOOGLE_RECONNECT_REQUIRED" ||
+    code === "GOOGLE_CALENDAR_RATE_LIMITED" ||
+    code === "GOOGLE_CALENDAR_TEMPORARILY_UNAVAILABLE" ||
+    code === "GOOGLE_CALENDAR_PERMISSION_DENIED" ||
+    code === "GOOGLE_CALENDAR_FORBIDDEN" ||
+    code === "UNAUTHENTICATED"
+  );
+}
+
+async function readJsonResponse<T>(response: Response) {
+  const payload = (await response.json().catch(() => ({}))) as T & CalendarApiError;
+
+  if (!response.ok) {
+    throw new CalendarRequestError({
+      code: payload.code,
+      message: payload.message ?? payload.error ?? "Unable to load Google Calendar.",
+      status: response.status,
+    });
+  }
+
+  return payload;
+}
+
+function getCalendarErrorMessage(error: unknown) {
+  if (error instanceof CalendarRequestError) {
+    if (error.code === "GOOGLE_RECONNECT_REQUIRED") {
+      return "Your Google Calendar connection has expired or was revoked.";
+    }
+
+    return error.message;
+  }
+
+  return error instanceof Error ? error.message : "Unable to load Google Calendar.";
+}
 
 async function getAuthorizationHeader(user: User) {
   return {
@@ -33,6 +100,7 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
   const [error, setError] = useState<string | null>(
     firebaseConfigured ? null : "Firebase client env vars are missing.",
   );
+  const [errorCode, setErrorCode] = useState<CalendarApiErrorCode | null>(null);
 
   useEffect(() => {
     if (!firebaseConfigured) return;
@@ -47,6 +115,7 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
       const timeoutId = window.setTimeout(() => {
         setLoadingStatus(false);
         setStatus(null);
+        setEvents([]);
       }, 0);
 
       return () => window.clearTimeout(timeoutId);
@@ -54,30 +123,35 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
 
     const activeUser = firebaseUser;
     let ignore = false;
+    const controller = new AbortController();
 
     async function loadStatus() {
       setLoadingStatus(true);
+      setError(null);
+      setErrorCode(null);
 
       try {
         const response = await fetch("/api/google/calendar/status", {
           headers: await getAuthorizationHeader(activeUser),
           cache: "no-store",
+          signal: controller.signal,
         });
-        const payload = (await response.json()) as CalendarStatus & { error?: string };
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Unable to load Google Calendar status.");
-        }
+        const payload = await readJsonResponse<CalendarStatus>(response);
 
         if (ignore) return;
         setStatus(payload);
-        setError(null);
+        if (payload.reconnectRequired) {
+          setError("Your Google Calendar connection has expired or was revoked.");
+          setErrorCode("GOOGLE_RECONNECT_REQUIRED");
+        } else {
+          setError(null);
+          setErrorCode(null);
+        }
       } catch (caughtError) {
         if (ignore) return;
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Unable to load Google Calendar status.",
+        setError(getCalendarErrorMessage(caughtError));
+        setErrorCode(
+          caughtError instanceof CalendarRequestError ? caughtError.code : "UNKNOWN",
         );
       } finally {
         if (!ignore) {
@@ -90,11 +164,12 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
 
     return () => {
       ignore = true;
+      controller.abort();
     };
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!firebaseUser || !status?.connected) {
+    if (!firebaseUser || !status?.connected || status.reconnectRequired) {
       const timeoutId = window.setTimeout(() => {
         setEvents([]);
       }, 0);
@@ -104,34 +179,39 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
 
     const activeUser = firebaseUser;
     let ignore = false;
+    const controller = new AbortController();
 
     async function loadEvents() {
       setLoadingEvents(true);
+      setError(null);
+      setErrorCode(null);
 
       try {
         const response = await fetch("/api/google/calendar/events", {
           headers: await getAuthorizationHeader(activeUser),
           cache: "no-store",
+          signal: controller.signal,
         });
-        const payload = (await response.json()) as {
-          events?: HubCalendarEvent[];
-          error?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Unable to load Google Calendar events.");
-        }
+        const payload = await readJsonResponse<{ events?: HubCalendarEvent[] }>(response);
 
         if (ignore) return;
         setEvents(payload.events ?? []);
         setError(null);
+        setErrorCode(null);
       } catch (caughtError) {
         if (ignore) return;
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Unable to load Google Calendar events.",
+        setError(getCalendarErrorMessage(caughtError));
+        setErrorCode(
+          caughtError instanceof CalendarRequestError ? caughtError.code : "UNKNOWN",
         );
+        if (
+          caughtError instanceof CalendarRequestError &&
+          caughtError.code === "GOOGLE_RECONNECT_REQUIRED"
+        ) {
+          setStatus((current) =>
+            current ? { ...current, connected: false, reconnectRequired: true } : current,
+          );
+        }
       } finally {
         if (!ignore) {
           setLoadingEvents(false);
@@ -143,17 +223,20 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
 
     return () => {
       ignore = true;
+      controller.abort();
     };
-  }, [firebaseUser, status?.connected]);
+  }, [firebaseUser, status?.connected, status?.reconnectRequired]);
 
   async function handleConnect() {
     if (!firebaseUser) {
       setError("You must be signed in to connect Google Calendar.");
       return;
     }
+    if (pendingConnect) return;
 
     setPendingConnect(true);
     setError(null);
+    setErrorCode(null);
 
     try {
       const response = await fetch("/api/google/calendar/connect", {
@@ -162,19 +245,19 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
           "Content-Type": "application/json",
           ...(await getAuthorizationHeader(firebaseUser)),
         },
+        cache: "no-store",
       });
-      const payload = (await response.json()) as { url?: string; error?: string };
+      const payload = await readJsonResponse<{ url?: string }>(response);
 
-      if (!response.ok || !payload.url) {
-        throw new Error(payload.error ?? "Unable to start Google Calendar connection.");
+      if (!payload.url) {
+        throw new Error("Unable to start Google Calendar connection.");
       }
 
       window.location.assign(payload.url);
     } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Unable to start Google Calendar connection.",
+      setError(getCalendarErrorMessage(caughtError));
+      setErrorCode(
+        caughtError instanceof CalendarRequestError ? caughtError.code : "UNKNOWN",
       );
       setPendingConnect(false);
     }
@@ -185,46 +268,57 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
       setError("You must be signed in to refresh Google Calendar.");
       return;
     }
+    if (loadingEvents || loadingStatus || pendingConnect) return;
 
     setLoadingEvents(true);
     setError(null);
+    setErrorCode(null);
 
     try {
-      const [statusResponse, eventsResponse] = await Promise.all([
-        fetch("/api/google/calendar/status", {
-          headers: await getAuthorizationHeader(firebaseUser),
-          cache: "no-store",
-        }),
-        fetch("/api/google/calendar/events", {
-          headers: await getAuthorizationHeader(firebaseUser),
-          cache: "no-store",
-        }),
-      ]);
-
-      const statusPayload = (await statusResponse.json()) as CalendarStatus & {
-        error?: string;
-      };
-      const eventsPayload = (await eventsResponse.json()) as {
-        events?: HubCalendarEvent[];
-        error?: string;
-      };
-
-      if (!statusResponse.ok) {
-        throw new Error(statusPayload.error ?? "Unable to refresh Google Calendar.");
-      }
-
-      if (!eventsResponse.ok) {
-        throw new Error(eventsPayload.error ?? "Unable to refresh Google Calendar.");
-      }
-
+      const headers = await getAuthorizationHeader(firebaseUser);
+      const statusResponse = await fetch("/api/google/calendar/status", {
+        headers,
+        cache: "no-store",
+      });
+      const statusPayload = await readJsonResponse<CalendarStatus>(statusResponse);
       setStatus(statusPayload);
+
+      if (statusPayload.reconnectRequired || !statusPayload.connected) {
+        setEvents([]);
+        setError(
+          statusPayload.reconnectRequired
+            ? "Your Google Calendar connection has expired or was revoked."
+            : null,
+        );
+        setErrorCode(
+          statusPayload.reconnectRequired ? "GOOGLE_RECONNECT_REQUIRED" : null,
+        );
+        return;
+      }
+
+      const eventsResponse = await fetch("/api/google/calendar/events", {
+        headers,
+        cache: "no-store",
+      });
+      const eventsPayload = await readJsonResponse<{
+        events?: HubCalendarEvent[];
+      }>(eventsResponse);
+
       setEvents(eventsPayload.events ?? []);
     } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Unable to refresh Google Calendar.",
+      setError(getCalendarErrorMessage(caughtError));
+      setErrorCode(
+        caughtError instanceof CalendarRequestError ? caughtError.code : "UNKNOWN",
       );
+      if (
+        caughtError instanceof CalendarRequestError &&
+        caughtError.code === "GOOGLE_RECONNECT_REQUIRED"
+      ) {
+        setStatus((current) =>
+          current ? { ...current, connected: false, reconnectRequired: true } : current,
+        );
+        setEvents([]);
+      }
     } finally {
       setLoadingEvents(false);
     }
@@ -232,21 +326,33 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
 
   const statusLabel = loadingStatus
     ? "Checking Google Calendar..."
-    : status?.connected
-      ? `Google Calendar connected${events.length ? ` · ${events.length} upcoming` : ""}`
-      : "Google Calendar not connected";
+    : status?.reconnectRequired
+      ? "Google Calendar needs reconnecting"
+      : status?.connected
+        ? loadingEvents
+          ? "Loading Google Calendar..."
+          : events.length
+            ? `Google Calendar connected - ${events.length} upcoming`
+            : "Google Calendar connected - No upcoming family events in the next 7 days"
+        : "Google Calendar not connected";
+  const shouldConnect = !status?.connected || status?.reconnectRequired;
+  const connectLabel = pendingConnect
+    ? "Redirecting..."
+    : status?.reconnectRequired || errorCode === "GOOGLE_RECONNECT_REQUIRED"
+      ? "Reconnect Google Calendar"
+      : "Connect Google Calendar";
 
   return (
     <div className="google-calendar-bar">
       <span
-        className={`provider-status ${status?.connected ? "good" : "warn"}`}
+        className={`provider-status ${status?.connected && !status.reconnectRequired ? "good" : "warn"}`}
         title={`Personal sync for ${currentUserName}`}
       >
         <CalendarSync size={15} />
         {statusLabel}
       </span>
 
-      {!status?.connected ? (
+      {shouldConnect ? (
         <button
           type="button"
           className="secondary-button"
@@ -254,14 +360,14 @@ export default function GoogleCalendarSync({ currentUserName }: Props) {
           disabled={pendingConnect || loadingStatus || !firebaseUser}
         >
           <ExternalLink size={16} />
-          {pendingConnect ? "Redirecting..." : "Connect Google Calendar"}
+          {connectLabel}
         </button>
       ) : (
         <button
           type="button"
           className="secondary-button"
           onClick={() => void handleRefreshEvents()}
-          disabled={loadingEvents || !firebaseUser}
+          disabled={loadingEvents || loadingStatus || !firebaseUser}
         >
           <RefreshCcw size={16} />
           {loadingEvents ? "Refreshing..." : "Refresh events"}

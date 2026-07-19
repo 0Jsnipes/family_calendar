@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { getGoogleCalendarIntegrationDoc } from "@/lib/googleCalendarIntegration";
+import { getGoogleCalendarCredentialStatus } from "@/lib/googleCalendarTokens";
 import { getActiveHubMembershipForUser } from "@/lib/hub";
 import { verifyFirebaseTokenFromAuthorizationHeader } from "@/lib/verifyFirebaseToken";
+
+export const dynamic = "force-dynamic";
+
+function jsonError(status: number, code: string, message: string) {
+  return NextResponse.json({ success: false, code, message }, { status });
+}
 
 export async function GET(request: Request) {
   try {
@@ -10,31 +16,28 @@ export async function GET(request: Request) {
     );
     const membership = await getActiveHubMembershipForUser(decoded.uid);
     if (!membership) {
-      return NextResponse.json({ error: "You are not a hub member." }, { status: 403 });
-    }
-    const snapshot = await getGoogleCalendarIntegrationDoc(decoded.uid).get();
-
-    if (!snapshot.exists) {
-      return NextResponse.json({ connected: false });
+      return jsonError(403, "HUB_MEMBERSHIP_REQUIRED", "You are not a hub member.");
     }
 
-    const data = snapshot.data() as {
-      connected?: boolean;
-      calendarIds?: string[];
-      lastSyncAt?: { toDate?: () => Date } | null;
-    };
+    const status = await getGoogleCalendarCredentialStatus(decoded.uid);
 
     return NextResponse.json({
-      connected: Boolean(data.connected),
-      calendarIds: data.calendarIds ?? ["primary"],
-      lastSyncAt: data.lastSyncAt?.toDate?.().toISOString() ?? null,
+      success: true,
+      ...status,
     });
   } catch (error) {
-    const message =
-      error instanceof Error && error.message === "missing-bearer-token"
-        ? "Missing Firebase authorization token."
-        : "Unable to load Google Calendar status.";
+    if (error instanceof Error && error.message === "missing-bearer-token") {
+      return jsonError(
+        401,
+        "UNAUTHENTICATED",
+        "Missing Firebase authorization token.",
+      );
+    }
 
-    return NextResponse.json({ error: message }, { status: 401 });
+    return jsonError(
+      500,
+      "GOOGLE_CALENDAR_STATUS_FAILED",
+      "Unable to load Google Calendar status.",
+    );
   }
 }

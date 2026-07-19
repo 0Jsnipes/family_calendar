@@ -133,3 +133,12 @@ export type HubSummary = {
   ownerUid: string;
   currentUserRole: HubMemberRole;
 };
+
+export type VoiceEventDraft = {
+  title: string;
+  allDay: boolean;
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+};

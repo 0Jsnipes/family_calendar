@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { encryptToken } from "@/lib/tokenCrypto";
-import { getGoogleCalendarOAuthClient } from "@/lib/googleCalendarOAuth";
+import {
+  GOOGLE_CALENDAR_READONLY_SCOPE,
+  getGoogleCalendarOAuthClient,
+} from "@/lib/googleCalendarOAuth";
 import {
   ensureDefaultHubMembershipPlaceholder,
   getGoogleCalendarOAuthStateDoc,
@@ -59,6 +62,8 @@ export async function GET(request: Request) {
     const oauthClient = getGoogleCalendarOAuthClient();
     const { tokens } = await oauthClient.getToken(code);
     const refreshToken = tokens.refresh_token?.trim();
+    const accessToken = tokens.access_token?.trim();
+    const scope = tokens.scope?.trim() || GOOGLE_CALENDAR_READONLY_SCOPE;
 
     if (!refreshToken) {
       return buildErrorRedirect(
@@ -66,9 +71,21 @@ export async function GET(request: Request) {
       );
     }
 
+    if (!scope.split(/\s+/).includes(GOOGLE_CALENDAR_READONLY_SCOPE)) {
+      return buildErrorRedirect(
+        "Google Calendar permission was not granted. Reconnect and approve calendar read access.",
+        403,
+      );
+    }
+
     await saveGoogleCalendarConnection({
       uid: stateData.uid,
       encryptedRefreshToken: encryptToken(refreshToken),
+      encryptedAccessToken: accessToken ? encryptToken(accessToken) : undefined,
+      accessTokenExpiresAt: tokens.expiry_date
+        ? Timestamp.fromMillis(tokens.expiry_date)
+        : undefined,
+      scope,
     });
     await ensureDefaultHubMembershipPlaceholder(stateData.uid);
 

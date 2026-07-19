@@ -1,14 +1,14 @@
 import "server-only";
 
 import { FieldValue } from "firebase-admin/firestore";
-import { google } from "googleapis";
 import { getFirebaseAdminDb, isFirebaseAdminConfigured } from "@/lib/firebase/admin-core";
-import { decryptToken } from "@/lib/tokenCrypto";
-import { getGoogleCalendarOAuthClient } from "@/lib/googleCalendarOAuth";
 import {
   getGoogleCalendarIntegrationDoc,
-  getGoogleCalendarPrivateTokenDoc,
 } from "@/lib/googleCalendarIntegration";
+import {
+  getValidGoogleAccessToken,
+  GoogleCalendarReconnectRequiredError,
+} from "@/lib/googleCalendarTokens";
 import { listActiveHubMembers } from "@/lib/hub";
 import type { CalendarEvent } from "@/types";
 
@@ -101,6 +101,50 @@ async function listHubCalendarEvents() {
   }
 }
 
+async function listGoogleCalendarEvents(accessToken: string, calendarId: string) {
+  const now = new Date();
+  const timeMax = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const url = new URL(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+  );
+  url.searchParams.set("timeMin", now.toISOString());
+  url.searchParams.set("timeMax", timeMax.toISOString());
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("orderBy", "startTime");
+  url.searchParams.set("maxResults", "50");
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    items?: GoogleCalendarApiEvent[];
+    error?: {
+      message?: string;
+      errors?: Array<{ reason?: string; message?: string }>;
+    };
+  };
+
+  if (!response.ok) {
+    const googleError = payload.error?.errors?.[0];
+    console.info("[google-calendar] hub events request failed", {
+      googleStatus: response.status,
+      reason: googleError?.reason ?? "unknown",
+      message:
+        googleError?.message ??
+        payload.error?.message ??
+        "Google Calendar API request failed.",
+    });
+    throw new Error(`google-calendar-request-failed:${response.status}`);
+  }
+
+  return payload.items ?? [];
+}
+
 export async function createHubCalendarEvent(input: {
   title: string;
   start: string;
@@ -178,17 +222,11 @@ export async function getCalendarEvents(): Promise<{
   }
 
   try {
-    const now = new Date();
-    const timeMax = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-
     const allEvents = await Promise.all(
       calendarMembers.map(async (member) => {
-        const [integrationSnapshot, tokenSnapshot] = await Promise.all([
-          getGoogleCalendarIntegrationDoc(member.uid!).get(),
-          getGoogleCalendarPrivateTokenDoc(member.uid!).get(),
-        ]);
+        const integrationSnapshot = await getGoogleCalendarIntegrationDoc(member.uid!).get();
 
-        if (!integrationSnapshot.exists || !tokenSnapshot.exists) {
+        if (!integrationSnapshot.exists) {
           return [] as CalendarEvent[];
         }
 
@@ -196,36 +234,21 @@ export async function getCalendarEvents(): Promise<{
           connected?: boolean;
           calendarIds?: string[];
         };
-        const tokenData = tokenSnapshot.data() as {
-          encryptedRefreshToken?: string;
-        };
 
-        if (!integrationData.connected || !tokenData.encryptedRefreshToken) {
+        if (!integrationData.connected) {
           return [] as CalendarEvent[];
         }
 
-        const oauthClient = getGoogleCalendarOAuthClient();
-        oauthClient.setCredentials({
-          refresh_token: decryptToken(tokenData.encryptedRefreshToken),
-        });
-
-        const calendar = google.calendar({ version: "v3", auth: oauthClient });
+        const accessToken = await getValidGoogleAccessToken(member.uid!);
         const calendarIds = integrationData.calendarIds?.length
           ? integrationData.calendarIds
           : ["primary"];
 
         const events = await Promise.all(
           calendarIds.map(async (calendarId) => {
-            const response = await calendar.events.list({
-              calendarId,
-              timeMin: now.toISOString(),
-              timeMax: timeMax.toISOString(),
-              singleEvents: true,
-              orderBy: "startTime",
-              maxResults: 25,
-            });
+            const googleEvents = await listGoogleCalendarEvents(accessToken, calendarId);
 
-            return (response.data.items ?? [])
+            return googleEvents
               .map((event) =>
                 mapGoogleEventToCalendarEvent(event as GoogleCalendarApiEvent, member),
               )
@@ -251,7 +274,12 @@ export async function getCalendarEvents(): Promise<{
       ),
       configured: true,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof GoogleCalendarReconnectRequiredError) {
+      console.info("[google-calendar] hub calendar reconnect required", {
+        code: error.code,
+      });
+    }
     return { events: hubEvents, configured: true };
   }
 }

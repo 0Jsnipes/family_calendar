@@ -21,6 +21,7 @@ import {
   Eraser,
   Home,
   LogIn,
+  Mic,
   Palette,
   Pencil,
   Plus,
@@ -47,6 +48,7 @@ import {
 import { useWeather } from "@/hooks/useWeather";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useKioskAutoRefresh } from "@/hooks/useKioskAutoRefresh";
+import { useVoiceInput, type VoiceParseResponse } from "@/hooks/useVoiceInput";
 import type { ForecastPeriod } from "@/lib/weather/types";
 import {
   addDays,
@@ -219,6 +221,17 @@ function getDefaultEventComposerState(date: Date): EventComposerState {
     startTime: formatTimeForInput(start),
     endTime: formatTimeForInput(end),
   };
+}
+
+function addHourToTime(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  const wrappedHours = (hours + 1) % 24;
+  return `${String(wrappedHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function parseDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function buildEventIso(date: Date, time: string) {
@@ -624,6 +637,49 @@ export default function ClientDashboard({
     resetEventComposer(date);
     setIsEventComposerOpen(true);
   }
+
+  const handleVoiceEventResult = useCallback(
+    (result: VoiceParseResponse) => {
+      if (result.kind !== "event") return;
+      const { event } = result;
+
+      if (event.date) {
+        setSelectedDate(parseDateKey(event.date));
+      }
+
+      setEventComposer((current) => ({
+        title: event.title.trim() || current.title,
+        location: event.location?.trim() ?? current.location,
+        allDay: event.allDay,
+        startTime: event.allDay
+          ? current.startTime
+          : (event.startTime ?? current.startTime),
+        endTime: event.allDay
+          ? current.endTime
+          : (event.endTime ?? addHourToTime(event.startTime ?? current.startTime)),
+      }));
+      setEventError(null);
+    },
+    [],
+  );
+
+  const voiceEvent = useVoiceInput(
+    "event",
+    { referenceDate: toDateKey(selectedDate, appConfig.timezone), timezone: appConfig.timezone },
+    handleVoiceEventResult,
+  );
+
+  const handleVoiceTaskResult = useCallback(
+    (result: VoiceParseResponse) => {
+      if (result.kind !== "task") return;
+      for (const title of result.tasks) {
+        void addTask(title);
+      }
+    },
+    [addTask],
+  );
+
+  const voiceTask = useVoiceInput("task", {}, handleVoiceTaskResult);
 
   async function handleAddTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1216,6 +1272,28 @@ export default function ClientDashboard({
                       className="event-composer"
                       onSubmit={handleCreateCalendarEvent}
                     >
+                      {appConfig.enableVoice && voiceEvent.isSupported ? (
+                        <div className="voice-input-row">
+                          <button
+                            type="button"
+                            className={`voice-mic-button ${voiceEvent.isListening ? "listening" : ""}`}
+                            onClick={() =>
+                              voiceEvent.isListening ? voiceEvent.stop() : voiceEvent.start()
+                            }
+                            disabled={voiceEvent.isProcessing}
+                          >
+                            <Mic size={16} />
+                            {voiceEvent.isListening
+                              ? "Tap to stop"
+                              : voiceEvent.isProcessing
+                                ? "Thinking..."
+                                : "Describe it"}
+                          </button>
+                          {voiceEvent.error ? (
+                            <span className="voice-input-error">{voiceEvent.error}</span>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <input
                         value={eventComposer.title}
                         onChange={(composeEvent) =>
@@ -2007,6 +2085,27 @@ export default function ClientDashboard({
                 <Plus size={18} /> Add
               </button>
             </form>
+
+            {appConfig.enableVoice && voiceTask.isSupported ? (
+              <div className="voice-input-row">
+                <button
+                  type="button"
+                  className={`voice-mic-button ${voiceTask.isListening ? "listening" : ""}`}
+                  onClick={() => (voiceTask.isListening ? voiceTask.stop() : voiceTask.start())}
+                  disabled={voiceTask.isProcessing}
+                >
+                  <Mic size={16} />
+                  {voiceTask.isListening
+                    ? "Tap to stop"
+                    : voiceTask.isProcessing
+                      ? "Thinking..."
+                      : "Add by voice"}
+                </button>
+                {voiceTask.error ? (
+                  <span className="voice-input-error">{voiceTask.error}</span>
+                ) : null}
+              </div>
+            ) : null}
 
             {tasksError ? <p className="quiet-note">{tasksError}</p> : null}
 

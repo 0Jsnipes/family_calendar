@@ -3,6 +3,7 @@ import "server-only";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { calendar_v3 } from "googleapis";
 import { getFirebaseAdminDb } from "@/lib/firebase/admin-core";
+import { mapGoogleCalendarEventToHubEvent } from "@/lib/googleCalendarEventUtils";
 import { GOOGLE_CALENDAR_READONLY_SCOPE } from "@/lib/googleCalendarOAuth";
 import { setMemberCalendarConnection } from "@/lib/hub";
 import type { HubCalendarEvent } from "@/types";
@@ -45,6 +46,9 @@ export async function markOAuthStateUsed(stateId: string) {
 export async function saveGoogleCalendarConnection(input: {
   uid: string;
   encryptedRefreshToken: string;
+  encryptedAccessToken?: string;
+  accessTokenExpiresAt?: Timestamp;
+  scope?: string;
 }) {
   const integrationRef = getGoogleCalendarIntegrationDoc(input.uid);
   const tokenRef = getGoogleCalendarPrivateTokenDoc(input.uid);
@@ -54,7 +58,8 @@ export async function saveGoogleCalendarConnection(input: {
       {
         connected: true,
         provider: "google",
-        scope: GOOGLE_CALENDAR_READONLY_SCOPE,
+        reconnectRequired: false,
+        scope: input.scope ?? GOOGLE_CALENDAR_READONLY_SCOPE,
         calendarIds: ["primary"],
         connectedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -65,6 +70,13 @@ export async function saveGoogleCalendarConnection(input: {
     tokenRef.set(
       {
         encryptedRefreshToken: input.encryptedRefreshToken,
+        ...(input.encryptedAccessToken
+          ? { encryptedAccessToken: input.encryptedAccessToken }
+          : {}),
+        ...(input.accessTokenExpiresAt
+          ? { accessTokenExpiresAt: input.accessTokenExpiresAt }
+          : {}),
+        scope: input.scope ?? GOOGLE_CALENDAR_READONLY_SCOPE,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -80,24 +92,12 @@ export function mapGoogleCalendarEvent(
   memberId?: string,
   ownerColor?: string,
 ): HubCalendarEvent | null {
-  const start = event.start?.dateTime ?? event.start?.date ?? null;
-  if (!start) return null;
-
-  const end = event.end?.dateTime ?? event.end?.date ?? null;
-
-  return {
-    id: event.id ?? crypto.randomUUID(),
-    title: event.summary?.trim() || "Untitled event",
-    start,
-    end,
-    allDay: Boolean(event.start?.date && !event.start?.dateTime),
-    calendarId: "primary",
+  return mapGoogleCalendarEventToHubEvent(event, {
+    uid,
     memberId,
-    ownerUid: uid,
     ownerName,
     ownerColor,
-    location: event.location ?? undefined,
-  };
+  });
 }
 
 export async function ensureDefaultHubMembershipPlaceholder(uid: string) {

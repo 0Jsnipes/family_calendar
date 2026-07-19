@@ -26,6 +26,30 @@ Copy `.env.example` to `.env.local` and update the JSON-backed values for your h
 - `FAMILY_MEMBERS_JSON`, `CHORES_JSON`, and `MEAL_PLAN_JSON` are read on the server at request time
 - Calendar events stay empty until Google Calendar credentials are connected
 
+## Voice commands
+
+Open "Add event" on the calendar page or the routine checklist drawer and tap
+**Describe it** / **Add by voice** to speak the event or task instead of
+typing it — e.g. "soccer practice tomorrow at 4 at the community field" or
+"add milk, eggs, and take out the trash."
+
+1. Set `NEXT_PUBLIC_ENABLE_VOICE="true"`.
+2. Set `ANTHROPIC_API_KEY` — used to turn the transcript into structured
+   event/task fields (title, date, time, location). Uses `claude-haiku-4-5`,
+   which is inexpensive for this kind of short extraction.
+3. On a normal browser (desktop/mobile Chrome, Edge, Safari), speech-to-text
+   happens for free in the browser itself (the Web Speech API) — no other
+   setup needed.
+4. On the `/kiosk` tablet, Fully Kiosk Browser and other embedded webviews
+   don't implement the Web Speech API, so the mic button instead records
+   audio and uploads it for transcription. That requires `OPENAI_API_KEY`
+   (Whisper) — without it, voice still works in real browsers, but tapping
+   the mic on the kiosk shows a "transcription is not configured" error.
+
+For events, the parsed event fills in the composer (title, date, time,
+location) — you still review and tap **Save event**. For tasks, each parsed
+item is added directly to the checklist.
+
 ## Connecting Google Calendar later
 
 The current server helpers in `lib/calendar.ts` are structured for future Google Calendar integration.

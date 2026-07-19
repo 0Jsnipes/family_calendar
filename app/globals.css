@@ -226,6 +226,49 @@ a {
   font-weight: 700;
 }
 
+.voice-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.voice-mic-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.voice-mic-button.listening {
+  background: var(--danger);
+  color: white;
+  border-color: transparent;
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.voice-input-error {
+  color: var(--danger);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .kiosk-reconnect-banner {
   position: fixed;
   top: 0;

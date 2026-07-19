@@ -31,6 +31,8 @@ export const serverConfig = {
   firebaseProjectId: process.env.FIREBASE_PROJECT_ID ?? "",
   firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL ?? "",
   firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY ?? "",
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   familyMembersJson: process.env.FAMILY_MEMBERS_JSON ?? "",
   choresJson: process.env.CHORES_JSON ?? "",
   mealPlanJson: process.env.MEAL_PLAN_JSON ?? "",

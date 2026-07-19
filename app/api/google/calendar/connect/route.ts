@@ -7,6 +7,12 @@ import { createPendingGoogleCalendarState } from "@/lib/googleCalendarIntegratio
 import { getActiveHubMembershipForUser } from "@/lib/hub";
 import { verifyFirebaseTokenFromAuthorizationHeader } from "@/lib/verifyFirebaseToken";
 
+export const dynamic = "force-dynamic";
+
+function jsonError(status: number, code: string, message: string) {
+  return NextResponse.json({ success: false, code, message }, { status });
+}
+
 export async function POST(request: Request) {
   try {
     const decoded = await verifyFirebaseTokenFromAuthorizationHeader(
@@ -14,33 +20,42 @@ export async function POST(request: Request) {
     );
     const membership = await getActiveHubMembershipForUser(decoded.uid);
     if (!membership) {
-      return NextResponse.json({ error: "You must join a hub first." }, { status: 403 });
+      return jsonError(403, "HUB_MEMBERSHIP_REQUIRED", "You must join a hub first.");
     }
     const state = createGoogleOAuthState();
 
     await createPendingGoogleCalendarState(decoded.uid, state);
 
     return NextResponse.json({
+      success: true,
       url: getGoogleCalendarAuthorizationUrl(state),
     });
   } catch (error) {
-    const message =
-      error instanceof Error && error.message.startsWith("missing-env:")
-        ? "Google Calendar OAuth is not configured."
-        : error instanceof Error && error.message === "missing-bearer-token"
-          ? "Missing Firebase authorization token."
-          : "Unable to start Google Calendar connection.";
+    if (error instanceof Error && error.message.startsWith("missing-env:")) {
+      return jsonError(
+        500,
+        "GOOGLE_CALENDAR_SERVER_CONFIG_MISSING",
+        "Google Calendar OAuth is not configured.",
+      );
+    }
 
-    const status =
+    if (
       error instanceof Error &&
       (error.message === "missing-bearer-token" ||
         error.message === "auth/argument-error" ||
         error.message === "auth/id-token-expired")
-        ? 401
-        : error instanceof Error && error.message.startsWith("missing-env:")
-          ? 500
-          : 400;
+    ) {
+      return jsonError(
+        401,
+        "UNAUTHENTICATED",
+        "Missing Firebase authorization token.",
+      );
+    }
 
-    return NextResponse.json({ error: message }, { status });
+    return jsonError(
+      500,
+      "GOOGLE_CALENDAR_CONNECT_FAILED",
+      "Unable to start Google Calendar connection.",
+    );
   }
 }

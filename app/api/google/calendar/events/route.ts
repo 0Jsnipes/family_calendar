@@ -1,67 +1,111 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { google } from "googleapis";
-import { decryptToken } from "@/lib/tokenCrypto";
-import { getGoogleCalendarOAuthClient } from "@/lib/googleCalendarOAuth";
 import {
   getGoogleCalendarIntegrationDoc,
-  getGoogleCalendarPrivateTokenDoc,
   mapGoogleCalendarEvent,
 } from "@/lib/googleCalendarIntegration";
+import { mapGoogleStatusToCalendarApiError } from "@/lib/googleCalendarEventUtils";
+import {
+  getValidGoogleAccessToken,
+  GoogleCalendarReconnectRequiredError,
+} from "@/lib/googleCalendarTokens";
 import { getActiveHubMembershipForUser } from "@/lib/hub";
 import { verifyFirebaseTokenFromAuthorizationHeader } from "@/lib/verifyFirebaseToken";
+import type { HubCalendarEvent } from "@/types";
+
+export const dynamic = "force-dynamic";
+
+type GoogleCalendarApiError = {
+  error?: {
+    code?: number;
+    message?: string;
+    errors?: Array<{
+      reason?: string;
+      message?: string;
+    }>;
+    status?: string;
+  };
+};
+
+type GoogleCalendarApiSuccess = {
+  items?: Parameters<typeof mapGoogleCalendarEvent>[0][];
+};
+
+function jsonError(status: number, code: string, message: string) {
+  return NextResponse.json({ success: false, code, message }, { status });
+}
+
+function readGoogleApiError(payload: GoogleCalendarApiError) {
+  const firstError = payload.error?.errors?.[0];
+  return {
+    reason: firstError?.reason ?? payload.error?.status ?? "unknown",
+    message:
+      firstError?.message ??
+      payload.error?.message ??
+      "Google Calendar API request failed.",
+  };
+}
+
+async function fetchPrimaryCalendarEvents(accessToken: string) {
+  const now = new Date();
+  const timeMax = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const url = new URL(
+    "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+  );
+  url.searchParams.set("timeMin", now.toISOString());
+  url.searchParams.set("timeMax", timeMax.toISOString());
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("orderBy", "startTime");
+  url.searchParams.set("maxResults", "50");
+
+  return fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+}
 
 export async function GET(request: Request) {
+  let uid: string | null = null;
   try {
     const decoded = await verifyFirebaseTokenFromAuthorizationHeader(
       request.headers.get("authorization"),
     );
+    uid = decoded.uid;
     const membership = await getActiveHubMembershipForUser(decoded.uid);
     if (!membership) {
-      return NextResponse.json({ error: "You are not a hub member." }, { status: 403 });
+      return jsonError(403, "HUB_MEMBERSHIP_REQUIRED", "You are not a hub member.");
     }
 
-    const [integrationSnapshot, tokenSnapshot] = await Promise.all([
-      getGoogleCalendarIntegrationDoc(decoded.uid).get(),
-      getGoogleCalendarPrivateTokenDoc(decoded.uid).get(),
-    ]);
+    const accessToken = await getValidGoogleAccessToken(decoded.uid);
+    const response = await fetchPrimaryCalendarEvents(accessToken);
+    const payload = (await response.json().catch(() => ({}))) as
+      | GoogleCalendarApiSuccess
+      | GoogleCalendarApiError;
 
-    if (!integrationSnapshot.exists || !tokenSnapshot.exists) {
-      return NextResponse.json(
-        { error: "Google Calendar is not connected." },
-        { status: 404 },
+    if (!response.ok) {
+      const googleError = readGoogleApiError(payload as GoogleCalendarApiError);
+      console.info("[google-calendar] events request failed", {
+        uid: decoded.uid,
+        googleStatus: response.status,
+        reason: googleError.reason,
+        message: googleError.message,
+      });
+      const appError = mapGoogleStatusToCalendarApiError(
+        response.status,
+        googleError.reason,
       );
+      return jsonError(appError.status, appError.code, appError.message);
     }
 
-    const tokenData = tokenSnapshot.data() as {
-      encryptedRefreshToken?: string;
-    };
-
-    if (!tokenData.encryptedRefreshToken) {
-      return NextResponse.json(
-        { error: "Google Calendar is not connected." },
-        { status: 404 },
-      );
-    }
-
-    const oauthClient = getGoogleCalendarOAuthClient();
-    oauthClient.setCredentials({
-      refresh_token: decryptToken(tokenData.encryptedRefreshToken),
+    console.info("[google-calendar] events request succeeded", {
+      uid: decoded.uid,
+      googleStatus: response.status,
     });
 
-    const calendar = google.calendar({ version: "v3", auth: oauthClient });
-    const now = new Date();
-    const timeMax = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    const response = await calendar.events.list({
-      calendarId: "primary",
-      timeMin: now.toISOString(),
-      timeMax: timeMax.toISOString(),
-      singleEvents: true,
-      orderBy: "startTime",
-      maxResults: 25,
-    });
-
-    const events = (response.data.items ?? [])
+    const events = ((payload as GoogleCalendarApiSuccess).items ?? [])
       .map((event) =>
         mapGoogleCalendarEvent(
           event,
@@ -71,7 +115,7 @@ export async function GET(request: Request) {
           membership.color,
         ),
       )
-      .filter((event) => Boolean(event));
+      .filter((event): event is HubCalendarEvent => Boolean(event));
 
     await getGoogleCalendarIntegrationDoc(decoded.uid).set(
       {
@@ -81,22 +125,41 @@ export async function GET(request: Request) {
       { merge: true },
     );
 
-    return NextResponse.json({ events });
+    return NextResponse.json({ success: true, events });
   } catch (error) {
-    const message =
-      error instanceof Error && error.message === "missing-bearer-token"
-        ? "Missing Firebase authorization token."
-        : error instanceof Error && error.message.startsWith("missing-env:")
-          ? "Google Calendar server configuration is incomplete."
-          : "Unable to load Google Calendar events.";
+    if (error instanceof GoogleCalendarReconnectRequiredError) {
+      return jsonError(409, error.code, error.message);
+    }
 
-    const status =
-      error instanceof Error && error.message === "missing-bearer-token"
-        ? 401
-        : error instanceof Error && error.message.startsWith("missing-env:")
-          ? 500
-          : 400;
+    if (error instanceof Error && error.message === "missing-bearer-token") {
+      return jsonError(
+        401,
+        "UNAUTHENTICATED",
+        "Missing Firebase authorization token.",
+      );
+    }
 
-    return NextResponse.json({ error: message }, { status });
+    if (error instanceof Error && error.message.startsWith("missing-env:")) {
+      console.error("[google-calendar] missing server configuration", {
+        uid,
+        setting: error.message.replace("missing-env:", ""),
+      });
+      return jsonError(
+        500,
+        "GOOGLE_CALENDAR_SERVER_CONFIG_MISSING",
+        "Google Calendar server configuration is incomplete.",
+      );
+    }
+
+    console.error("[google-calendar] unexpected events failure", {
+      uid,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return jsonError(
+      500,
+      "GOOGLE_CALENDAR_UNEXPECTED_ERROR",
+      "Unable to load Google Calendar events.",
+    );
   }
 }
