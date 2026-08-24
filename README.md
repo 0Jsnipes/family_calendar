@@ -1,184 +1,281 @@
 # Family Hub
 
-Family Hub is a standalone family calendar dashboard built for a wall-mounted tablet, Raspberry Pi touchscreen, or always-on browser display.
+**Family Hub** is a full-stack household dashboard designed for wall-mounted tablets, touchscreens, and always-on displays. This was made as a personal project you will need to connect your google calendar secrets to be able to use and edit the approved emails in your .ENV
 
-## What it does
+It combines shared calendars, routines, weather, meal planning, family status, voice input, authentication, and kiosk-specific behavior into a single responsive interface built for daily household use.
 
-- Shows today, week, and month calendar views
-- Surfaces chores, meal planning, weather, and family status
-- Loads dashboard content from environment variables
-- Uses Google Calendar plus National Weather Service data
-- Supports kiosk-style full-screen display and standby screensaver behavior
+## Highlights
 
-## Run locally
+* Shared day, week, and month calendar views
+* Google Calendar integration architecture
+* Voice-created events and tasks
+* AI-assisted natural-language parsing
+* Household routines, chores, notes, and meal planning
+* National Weather Service integration
+* Multi-user Firebase authentication
+* Dedicated kiosk authentication flow
+* Offline recovery and long-running display support
+* Responsive PWA-style interface
+* Tablet, desktop, mobile, and wall-display support
+
+## Tech Stack
+
+* **Next.js**
+* **React**
+* **TypeScript**
+* **Firebase Authentication**
+* **Firestore**
+* **Google Calendar APIs**
+* **OpenAI Whisper**
+* **Anthropic Claude**
+* **Web Speech API**
+* **National Weather Service API**
+* **Vercel**
+
+## Why I Built It
+
+Family scheduling tools are usually designed around phones or individual calendars.
+
+Family Hub was designed around a different use case: a shared household display that stays available throughout the day and works more like a small operating system for the home.
+
+That required solving several problems beyond a normal calendar interface, including:
+
+* Persistent kiosk sessions
+* Authentication inside restricted embedded browsers
+* Network recovery for always-on devices
+* Voice input across browsers with different API capabilities
+* Multiple calendar views
+* Household-specific state
+* Long-running browser reliability
+* Responsive layouts across tablets, desktops, and mobile devices
+
+## Voice Commands
+
+Users can create events and routine tasks using natural-language voice input.
+
+Examples:
+
+```text
+Soccer practice tomorrow at 4 at the community field
+```
+
+```text
+Add milk, eggs, and take out the trash
+```
+
+In standard browsers, Family Hub uses the browser's **Web Speech API** for transcription.
+
+The resulting text is sent to **Anthropic Claude** to extract structured information such as:
+
+* Event title
+* Date
+* Time
+* Location
+* Task items
+
+For kiosk browsers and embedded webviews that do not support the Web Speech API, the application records audio and uses **OpenAI Whisper** for transcription.
+
+This creates two separate voice-processing paths while maintaining the same user experience.
+
+## Kiosk Architecture
+
+Family Hub includes a dedicated `/kiosk` authentication path for wall-mounted tablets and embedded browsers.
+
+Google OAuth does not reliably work inside many kiosk browsers because embedded webviews can trigger Google's `disallowed_useragent` restriction.
+
+Instead of forcing the normal authentication flow into an unsupported environment, Family Hub uses:
+
+* Google authentication for standard browsers
+* Email/password authentication for kiosk devices
+* Persistent Firebase sessions
+* Dedicated kiosk accounts
+* Automatic reconnect handling
+* Periodic data refresh
+* Periodic full-page recovery for long-running sessions
+
+This allows a tablet to remain logged in and operational through browser restarts, temporary network outages, and extended uptime.
+
+## Authentication
+
+Standard users authenticate using Firebase Google Sign-In.
+
+The application prefers:
+
+```text
+signInWithPopup
+```
+
+and falls back to:
+
+```text
+signInWithRedirect
+```
+
+when necessary.
+
+This avoids an Android Chrome/PWA issue where redirect-based authentication can lose the browser's stored OAuth state during a full-page navigation.
+
+Kiosk devices use a separate email/password authentication flow because embedded kiosk browsers generally cannot complete Google OAuth.
+
+## Calendar Architecture
+
+The application is structured to support Google Calendar synchronization through server-side helpers.
+
+Planned and existing integration points include:
+
+* Multiple Google Calendar IDs
+* Server-side event fetching
+* Shared `CalendarEvent` models
+* OAuth refresh-token support
+* Incremental synchronization through `nextSyncToken`
+* Event normalization before rendering
+
+The UI supports:
+
+* Today view
+* Week view
+* Month view
+* Kiosk display mode
+
+Useful query parameters include:
+
+```text
+?view=today
+?view=week
+?view=month
+?kiosk=true
+```
+
+## Household Dashboard
+
+Family Hub surfaces more than calendar events.
+
+The dashboard can include:
+
+* Family members
+* Daily routines
+* Chores
+* Meal planning
+* Notes
+* Weather
+* Household status
+* Calendar events
+
+Household configuration is loaded server-side so sensitive configuration does not need to be exposed to the browser.
+
+## Reliability
+
+Because the application is intended to run continuously on a household display, reliability behavior is built into the kiosk experience.
+
+The display can:
+
+* Detect offline status
+* Show a reconnecting state
+* Recover when connectivity returns
+* Refresh application data periodically
+* Perform scheduled full reloads to prevent long-running browser drift
+* Persist kiosk authentication across restarts
+
+These features make the application suitable for an always-on display rather than only short browser sessions.
+
+## Accessibility and Device Support
+
+Family Hub is designed for:
+
+* Desktop browsers
+* Mobile browsers
+* Android tablets
+* Wall-mounted displays
+* Raspberry Pi touchscreens
+* Kiosk browsers
+* Progressive Web App installations
+
+Recommended display resolutions include:
+
+* `1280x800`
+* `1920x1080`
+
+Landscape orientation provides the best dashboard experience.
+
+## Running Locally
+
+Install dependencies:
 
 ```bash
 npm install
+```
+
+Start the development server:
+
+```bash
 npm run dev
 ```
 
-## Environment
+Copy the example environment configuration:
 
-Copy `.env.example` to `.env.local` and update the JSON-backed values for your household.
+```bash
+cp .env.example .env.local
+```
 
-- `NEXT_PUBLIC_*` values are safe for the client
-- Secret Google credentials stay server-side only
-- `FAMILY_MEMBERS_JSON`, `CHORES_JSON`, and `MEAL_PLAN_JSON` are read on the server at request time
-- Calendar events stay empty until Google Calendar credentials are connected
+Then configure the required services.
 
-## Voice commands
+## Environment Variables
 
-Open "Add event" on the calendar page or the routine checklist drawer and tap
-**Describe it** / **Add by voice** to speak the event or task instead of
-typing it — e.g. "soccer practice tomorrow at 4 at the community field" or
-"add milk, eggs, and take out the trash."
+Example configuration includes:
 
-1. Set `NEXT_PUBLIC_ENABLE_VOICE="true"`.
-2. Set `ANTHROPIC_API_KEY` — used to turn the transcript into structured
-   event/task fields (title, date, time, location). Uses `claude-haiku-4-5`,
-   which is inexpensive for this kind of short extraction.
-3. On a normal browser (desktop/mobile Chrome, Edge, Safari), speech-to-text
-   happens for free in the browser itself (the Web Speech API) — no other
-   setup needed.
-4. On the `/kiosk` tablet, Fully Kiosk Browser and other embedded webviews
-   don't implement the Web Speech API, so the mic button instead records
-   audio and uploads it for transcription. That requires `OPENAI_API_KEY`
-   (Whisper) — without it, voice still works in real browsers, but tapping
-   the mic on the kiosk shows a "transcription is not configured" error.
+```env
+NEXT_PUBLIC_ENABLE_VOICE=true
 
-For events, the parsed event fills in the composer (title, date, time,
-location) — you still review and tap **Save event**. For tasks, each parsed
-item is added directly to the checklist.
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
 
-## Connecting Google Calendar later
+GOOGLE_CALENDAR_IDS=
+```
 
-The current server helpers in `lib/calendar.ts` are structured for future Google Calendar integration.
+Household configuration can also be provided through server-side values such as:
 
-Planned connection points:
+```env
+FAMILY_MEMBERS_JSON=
+CHORES_JSON=
+MEAL_PLAN_JSON=
+```
 
-- Read `GOOGLE_CALENDAR_IDS`
-- Add OAuth refresh-token or server credential flow
-- Fetch Google events on the server
-- Map Google events into the shared `CalendarEvent` type
-- Support incremental sync with `nextSyncToken`
+Client-safe values use the `NEXT_PUBLIC_` prefix.
 
-## Kiosk mode (display behavior)
+Sensitive API keys and credentials remain server-side.
 
-Useful query params on the normal `/` route:
+## Testing
 
-- `?view=today`
-- `?view=week`
-- `?view=month`
-- `?kiosk=true`
+Key application flows include:
 
-The dashboard includes an idle screensaver mode and a dimmed night mode for display use.
+* Desktop Google authentication
+* Android browser authentication
+* Kiosk email/password authentication
+* Persistent kiosk sessions
+* Offline recovery
+* Calendar rendering
+* Voice event creation
+* Voice task creation
+* Household member management
+* Responsive tablet layouts
 
-This is separate from the **`/kiosk` route** described below, which is a dedicated
-sign-in path for tablets/wall displays that can't use Google sign-in.
+## Production Considerations
 
-## Firebase Authentication setup
+* National Weather Service data does not require an API key.
+* Sensitive Google, OpenAI, and Anthropic credentials remain server-side.
+* Embedded kiosk browsers use a separate authentication strategy from standard browsers.
+* The application includes manifest support for standalone installation.
+* Production deployments should include finalized PWA icons and platform metadata.
 
-1. In the [Firebase Console](https://console.firebase.google.com/), open the
-   project (`family-calendar-8cf78`) → **Authentication → Settings →
-   Authorized domains**, and confirm the Vercel domain
-   (`family-calendar-gamma-three.vercel.app`) is listed, along with any
-   custom domain and `localhost` for local dev.
-2. Under **Authentication → Sign-in method**, make sure **Google** is
-   enabled (used by normal users on `/`).
-3. Under the same page, enable the **Email/Password** provider — this is
-   what the `/kiosk` route uses. It's off by default.
+## Project Status
 
-Normal sign-in (`/`) uses `signInWithPopup` first and only falls back to
-`signInWithRedirect` if the popup itself is blocked or unsupported in that
-browser. This avoids the popular Android Chrome/PWA failure mode where a
-redirect round-trip lands on `.../__/auth/handler` with "missing initial
-state" — that page belongs to Firebase, not this app, and depends on
-`sessionStorage` surviving a full-page navigation, which mobile browsers
-don't always guarantee. Kiosk/embedded-webview browsers (Fully Kiosk
-Browser, in-app webviews) generally can't complete Google OAuth at all
-(`403: disallowed_useragent`) — those devices should use `/kiosk` instead of
-`/`.
+Family Hub is an actively developed personal software project focused on experimenting with:
 
-## Kiosk device setup (`/kiosk`)
-
-`/kiosk` is a dedicated sign-in path for tablets and wall displays. It never
-shows Google sign-in, never opens a popup, and never redirects through
-Google's OAuth screens — so it works in kiosk browsers that reject Google's
-user-agent check. The kiosk account itself has the same permissions as any
-other signed-in family member (see below) — the only thing that's different
-about `/kiosk` is *how* it signs in.
-
-1. **Enable Email/Password auth** (see above) if you haven't already.
-2. **Create a Firebase Auth user for the kiosk device** — Firebase Console
-   → Authentication → Users → Add user. Use a dedicated email you control,
-   e.g. `kitchen-hub@yourdomain.com`, and set a password.
-3. **Add that user as a hub member with the `kiosk` role.** In Firestore,
-   under `hubs/default/members/{uid}` (use the UID from the user you just
-   created), create a document:
-   ```
-   type: "account"
-   uid: "<the kiosk user's UID>"
-   email: "kitchen-hub@yourdomain.com"
-   displayName: "Kitchen Hub"
-   role: "kiosk"
-   status: "active"
-   calendarConnected: false
-   showCalendarOnHub: false
-   color: "#2563eb"
-   createdAt: <server timestamp>
-   updatedAt: <server timestamp>
-   ```
-   The `kiosk` role is intentionally not exposed in the app's own "add
-   member" UI — it's only granted by editing Firestore directly, so it
-   can't be self-assigned.
-4. On the tablet, open **`https://family-calendar-gamma-three.vercel.app/kiosk`**
-   in Fully Kiosk Browser (or any browser) and sign in once with the kiosk
-   email/password. The session persists locally, so it survives refreshes,
-   app relaunches, and browser restarts.
-5. **Do not use Google sign-in in Fully Kiosk Browser** — it will fail with
-   `403: disallowed_useragent`. Always use `/kiosk`.
-
-### What kiosk accounts can do
-
-The `kiosk` role has full access, same as any other signed-in family
-member — it can add/edit/delete calendar events, routine tasks, and notes,
-manage hub members and invites, and connect Google Calendar. The `kiosk`
-role is intentionally not exposed in the app's own "add member" UI — it's
-only granted by editing Firestore directly, so it can't be self-assigned by
-an invited member. If you want a device to have *less* access than a normal
-member, don't use the `kiosk` role for it — invite it as a normal
-member/child account instead.
-
-The kiosk display also auto-recovers on its own: it shows a
-"Reconnecting..." banner while offline and refreshes automatically when the
-network returns, refetches data every few minutes, and does a full reload
-every few hours to avoid long-uptime drift.
-
-## Testing checklist
-
-1. Normal desktop Chrome Google login works (`/`).
-2. Normal Android Chrome Google login works, or shows a clean in-app error
-   instead of getting stuck on a Firebase-hosted page.
-3. Fully Kiosk Browser never shows a Google sign-in button or popup.
-4. `/kiosk` email/password login works.
-5. `/kiosk` stays signed in after a refresh, app relaunch, or browser
-   restart.
-6. A kiosk account can view and fully use the hub dashboard (calendar,
-   weather, routine, notes, family members, member management).
-7. The app never gets stuck on a blank white screen, in any of the above
-   flows.
-
-## Recommended display settings
-
-- 1280x800 for compact tablets
-- 1920x1080 for wall displays
-- Landscape orientation
-- Auto-hide browser UI if possible
-- Keep brightness moderate to reduce burn-in
-
-## Production notes
-
-- National Weather Service data requires no API key
-- Keep secrets server-side only
-- Add app icons before publishing as a PWA
-- Use the included manifest for standalone install behavior
+* Full-stack application architecture
+* Household automation
+* AI-assisted interfaces
+* Cross-device authentication
+* PWA behavior
+* Voice interaction
+* Always-on kiosk applications
+* Third-party API integration
